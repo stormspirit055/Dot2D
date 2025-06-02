@@ -12,6 +12,7 @@ export default class Project {
     this.url = options.url
     this._init(options)
   }
+
   load() {
     this.drawborads.forEach((item) => {
       item.load(this.url)

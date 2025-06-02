@@ -1,8 +1,21 @@
 import EventEmitter from '../EventEmitter'
 import { type GenericPlugin } from '../BasePlugin'
-import { FabricImage, Canvas } from 'fabric'
+import {
+  FabricImage,
+  Canvas,
+  Point,
+  type TPointerEventInfo,
+  type TPointerEvent,
+  util,
+  type TMat2D,
+} from 'fabric'
 export type DrawBoradEvents = {
   load: []
+  zoom: [number]
+  mouseDown: [e: TPointerEventInfo]
+  mouseUp: [e: TPointerEventInfo]
+  mouseOver: [e: TPointerEventInfo]
+  mouseOut: [e: TPointerEventInfo]
 }
 export type DrawBoradOptions = {
   container: HTMLElement
@@ -16,18 +29,68 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   canvasDom!: HTMLCanvasElement
   plugins: GenericPlugin[] = []
   options?: DrawBoradOptions
+  img: FabricImage | undefined
   protected subscriptions: Array<() => void> = []
   constructor(options: DrawBoradOptions) {
     super()
     this.options = options
     this.initDom(options)
     this.initPlugins()
+    this.initEvents()
   }
   async load(url: string) {
     await this.loadImage(url)
   }
-  zoom(scale: number) {
-    this.canvas.setZoom(scale)
+  // 缩放至画布初始状态
+  zoom(): void
+  // 缩放一定比例， 图片位置不动
+  zoom(scale: number): void
+  // 缩放比例， 将图片移至中心位置
+  zoom(scale: number, point: Point): void
+  zoom(scale?: number, point?: Point) {
+    console.log('zoom', scale, point)
+    if (scale) {
+      if (point) {
+        this.canvas?.zoomToPoint(point, scale)
+      } else {
+        this.canvas.setZoom(scale)
+      }
+      this.emit('zoom', scale)
+    } else {
+      this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0])
+      this.emit('zoom', 1)
+    }
+  }
+  rotate(angle: number) {
+    const vpt = this.canvas.viewportTransform
+    const center = this.canvas.getCenterPoint()
+    const centerX = center.x
+    const centerY = center.y
+    const rad = util.degreesToRadians(angle)
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    // 计算旋转矩阵
+    const rotationMatrix: TMat2D = [
+      cos,
+      sin,
+      -sin,
+      cos,
+      centerX - centerX * cos + centerY * sin,
+      centerY - centerX * sin - centerY * cos,
+    ]
+    const newVpt = util.multiplyTransformMatrices(vpt, rotationMatrix)
+    console.log(newVpt)
+    this.canvas.setViewportTransform(newVpt)
+    console.log(this.getZoom)
+    // const canvasWidth = this.canvas.getWidth()
+    // const canvasHeight = this.canvas.getHeight()
+    // const scaleX = canvasWidth / this.img!.height
+    // const scaleY = canvasHeight / this.img!.width
+    // const scale = Math.min(scaleX, scaleY)
+    // this.img.scale(scale)
+  }
+  get getZoom() {
+    return this.canvas.getZoom()
   }
   private initDom(options: DrawBoradOptions) {
     const container = options.container
@@ -66,6 +129,7 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
             left: (canvasWidth - newWidth) / 2,
             top: (canvasHeight - newHeight) / 2,
           })
+          this.img = img
           img.hasControls = false
           canvas.add(img)
           resolve()
@@ -79,6 +143,20 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     if (!this.options?.plugins?.length) return
     this.options.plugins.forEach((plugin) => {
       this.registerPlugin(plugin)
+    })
+  }
+  private initEvents() {
+    this.canvas.on('mouse:down', (opt: TPointerEventInfo<TPointerEvent>) => {
+      this.emit('mouseDown', opt)
+    })
+    this.canvas.on('mouse:up', (opt: TPointerEventInfo<TPointerEvent>) => {
+      this.emit('mouseUp', opt)
+    })
+    this.canvas.on('mouse:over', (opt: TPointerEventInfo<TPointerEvent>) => {
+      this.emit('mouseOver', opt)
+    })
+    this.canvas.on('mouse:out', (opt: TPointerEventInfo<TPointerEvent>) => {
+      this.emit('mouseOut', opt)
     })
   }
 
