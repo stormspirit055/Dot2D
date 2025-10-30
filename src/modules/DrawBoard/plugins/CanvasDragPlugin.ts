@@ -1,6 +1,6 @@
 // 拖动画布插件
-import BasePlugin from '@/modules/BasePlugin'
-import type { BasePluginEvents } from '@/modules/BasePlugin'
+import BasePlugin from '../../BasePlugin'
+import type { BasePluginEvents } from '../../BasePlugin'
 import DrawBorad from '../index'
 import { Canvas, type TPointerEventInfo, type TPointerEvent, Point } from 'fabric'
 export type CanvasDragPluginEvents = BasePluginEvents & {}
@@ -21,16 +21,24 @@ export default class CanvasDragPlugin extends BasePlugin<
     super(options)
   }
   protected onInit(): void {
+    this.canvas = this.host?.getCanvas()
     this._bindEvent()
   }
   private _bindEvent() {
-    this.canvas = this.host?.getCanvas()
-    if (!this.canvas) {
+    if (!this.canvas || !this.host) {
       return
     }
-    this.canvas.on('mouse:move', this.handleMouseMove)
-    this.canvas.on('mouse:down', this.handleMouseDown)
-    this.canvas.on('mouse:up', this.handleMouseUp)
+    this.host.on('mouseMove', this.handleMouseMove)
+    this.host.on('mouseDown', this.handleMouseDown)
+    this.host.on('mouseUp', this.handleMouseUp)
+  }
+
+  protected onDestroy(): void {
+    if (this.canvas && this.host) {
+      this.host.un('mouseMove', this.handleMouseMove)
+      this.host.un('mouseDown', this.handleMouseDown)
+      this.host.un('mouseUp', this.handleMouseUp)
+    }
   }
   private handleMouseMove = (opt: TPointerEventInfo<TPointerEvent>) => {
     if (this.isMousedown && this.canvas) {
@@ -52,7 +60,7 @@ export default class CanvasDragPlugin extends BasePlugin<
     }
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  handleMouseUp = (opt: TPointerEventInfo<TPointerEvent>) => {
+  handleMouseUp = (_opt: TPointerEventInfo<TPointerEvent>) => {
     this.isMousedown = false
   }
 }

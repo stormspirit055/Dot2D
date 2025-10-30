@@ -1,14 +1,15 @@
 import EventEmitter from './EventEmitter'
-import DrawBorad from './DrawBoard'
-import Project from './Project'
+
 export type BasePluginEvents = {
   destroy: []
 }
-export type GenericPlugin = BasePlugin<BasePluginEvents, unknown, DrawBorad | Project>
+
+// 使用泛型避免循环依赖
+export type GenericPlugin = BasePlugin<BasePluginEvents, unknown, any>
 // 画板插件
-export type GenericDrawBoardPlugin = BasePlugin<BasePluginEvents, unknown, DrawBorad>
+export type GenericDrawBoardPlugin = BasePlugin<BasePluginEvents, unknown, any>
 // 主体插件
-export type GenericProjectPlugin = BasePlugin<BasePluginEvents, unknown, Project>
+export type GenericProjectPlugin = BasePlugin<BasePluginEvents, unknown, any>
 export class BasePlugin<
   EventTypes extends BasePluginEvents,
   Options,

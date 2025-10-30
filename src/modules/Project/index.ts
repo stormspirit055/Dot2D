@@ -1,6 +1,4 @@
 import DrawBorad from '../DrawBoard'
-import WheelZoomPlugin from '../DrawBoard/plugins/WheelZoomPlugin'
-import CanvasDragPlugin from '../DrawBoard/plugins/CanvasDragPlugin'
 type ProjectOptions = {
   container: string
   url: string
@@ -21,12 +19,13 @@ export default class Project {
   private _init(options: ProjectOptions) {
     const { container } = options
     const containerDom = document.querySelector(container) as HTMLDivElement
+    console.log(containerDom.clientWidth)
     const drawBorad = new DrawBorad({
       container: containerDom,
       width: 1000,
       height: 1000,
       id: 'drawBorad',
-      plugins: [WheelZoomPlugin.create(), CanvasDragPlugin.create()],
+      plugins: [],
     })
     this.drawborads.push(drawBorad)
   }

@@ -1,6 +1,6 @@
 // 鼠标滚轮缩放插件
-import BasePlugin from '@/modules/BasePlugin'
-import type { BasePluginEvents } from '@/modules/BasePlugin'
+import BasePlugin from '../../BasePlugin'
+import type { BasePluginEvents } from '../../BasePlugin'
 import DrawBorad from '../index'
 import { Canvas, type TPointerEventInfo } from 'fabric'
 export type WheelZoomPluginEvents = BasePluginEvents
@@ -53,7 +53,7 @@ export default class WheelZoomPlugin extends BasePlugin<
     if (!this.canvas) {
       return
     }
-    this.canvas.on('mouse:wheel', this.handleMouseWheel)
+    this.host?.on('mouseWheel', this.handleMouseWheel)
   }
   private handleMouseWheel = (opt: TPointerEventInfo) => {
     const event = opt.e as WheelEvent
@@ -63,7 +63,6 @@ export default class WheelZoomPlugin extends BasePlugin<
     const delta = event.deltaY < 0 ? -10 : 10
     const pointer = this.canvas?.getViewportPoint(event)
     const result = zoom! * (1 + delta * this.options.scale)
-    console.log(result)
     if (result > this.options.maxZoom || result < this.options.minZoom) {
       return
     }
@@ -71,7 +70,7 @@ export default class WheelZoomPlugin extends BasePlugin<
   }
   public destroy(): void {
     if (this.canvas) {
-      this.canvas.off('mouse:wheel', this.handleMouseWheel)
+      this.host?.un('mouseWheel', this.handleMouseWheel)
     }
     super.destroy()
   }
