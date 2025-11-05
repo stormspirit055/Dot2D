@@ -1,4 +1,10 @@
-import { Circle, Canvas } from 'fabric'
+import { Circle, Canvas, FabricObject } from 'fabric'
+
+// 添加 DrawBoard 类型导入
+type DrawBoardEventEmitter = {
+  on(event: 'zoom', listener: (zoomLevel: number) => void): void
+  un(event: 'zoom', listener: (zoomLevel: number) => void): void
+}
 
 /**
  * 顶点类型枚举
@@ -10,6 +16,20 @@ export enum VertexType {
   RECTANGLE_BOTTOM_LEFT = 'bottomLeft',
   POLYGON_VERTEX = 'polygonVertex',
   POINT = 'point',
+}
+
+/**
+ * 顶点数据接口 - 统一的顶点数据结构
+ */
+export interface VertexData {
+  /** 关联的形状对象（统一字段，替代原来的 polygon、rectangle 等） */
+  shape: FabricObject
+  /** 顶点类型 */
+  vertexType: VertexType
+  /** 顶点在形状中的索引（对于多边形顶点） */
+  vertexIndex?: number
+  /** 其他自定义数据 */
+  [key: string]: unknown
 }
 
 /**
@@ -25,7 +45,7 @@ export interface VertexConfig {
   isInteractive?: boolean
   vertexType?: VertexType
   vertexIndex?: number
-  data?: any
+  data?: Partial<VertexData>
 }
 
 /**
@@ -48,8 +68,15 @@ export class ShapeVertex {
   private callbacks: VertexEventCallbacks
   private originalRadius: number
   private originalColor: string
+  private drawBoard: DrawBoardEventEmitter | null
+  private zoomListener: ((zoomLevel: number) => void) | null = null
 
-  constructor(canvas: Canvas, config: VertexConfig, callbacks: VertexEventCallbacks = {}) {
+  constructor(
+    canvas: Canvas, 
+    config: VertexConfig, 
+    callbacks: VertexEventCallbacks = {},
+    drawBoard?: DrawBoardEventEmitter
+  ) {
     this.canvas = canvas
     this.config = {
       radius: 7,
@@ -62,9 +89,42 @@ export class ShapeVertex {
     this.callbacks = callbacks
     this.originalRadius = this.config.radius!
     this.originalColor = this.config.color!
+    this.drawBoard = drawBoard || null
 
     this.vertex = this.createVertex()
     this.setupEventListeners()
+    this.setupZoomListener()
+  }
+
+  /**
+   * 设置缩放事件监听器
+   */
+  private setupZoomListener(): void {
+    if (!this.drawBoard) return
+
+    this.zoomListener = (zoomLevel: number) => {
+      this.compensateScaling(zoomLevel)
+    }
+
+    this.drawBoard.on('zoom', this.zoomListener)
+  }
+
+  /**
+   * 对顶点进行缩放补偿，使其在画布缩放时保持固定的视觉大小
+   * @param zoomLevel 当前画布的缩放级别
+   */
+  private compensateScaling(zoomLevel: number): void {
+    // 计算反向缩放比例
+    const compensationScale = 1 / zoomLevel
+
+    // 设置反向缩放比例，抵消画布缩放的影响
+    this.vertex.set({
+      scaleX: compensationScale,
+      scaleY: compensationScale,
+    })
+
+    // 重新渲染画布
+    this.canvas.renderAll()
   }
 
   /**
@@ -86,13 +146,9 @@ export class ShapeVertex {
       originY: 'center',
       hasControls: false,
       hasBorders: false,
+      visible: false, // 默认隐藏顶点
       // 顶点特有属性
       excludeFromExport: true, // 顶点不参与导出
-      lockScalingX: true, // 锁定X轴缩放
-      lockScalingY: true, // 锁定Y轴缩放
-      lockRotation: true, // 锁定旋转
-      scaleX: 1, // 固定X轴缩放比例
-      scaleY: 1, // 固定Y轴缩放比例
       isVertex: true, // 标识这是一个顶点，用于缩放补偿
       // 优化交互区域
       perPixelTargetFind: false,
@@ -100,8 +156,8 @@ export class ShapeVertex {
     })
 
     // 设置顶点数据
-    const vertexData = {
-      vertexType: this.config.vertexType,
+    const vertexData: Partial<VertexData> = {
+      vertexType: this.config.vertexType || VertexType.POINT,
       vertexIndex: this.config.vertexIndex,
       ...this.config.data,
     }
@@ -169,22 +225,6 @@ export class ShapeVertex {
   }
 
   /**
-   * 更新顶点位置
-   */
-  public updatePosition(x: number, y: number): void {
-    this.vertex.set({ left: x, top: y })
-    this.vertex.setCoords()
-  }
-
-  /**
-   * 更新顶点数据
-   */
-  public updateData(data: any): void {
-    const currentData = this.vertex.get('data') || {}
-    this.vertex.set('data', { ...currentData, ...data })
-  }
-
-  /**
    * 获取顶点对象
    */
   public getVertex(): Circle {
@@ -199,10 +239,26 @@ export class ShapeVertex {
   }
 
   /**
-   * 获取顶点数据
+   * 显示顶点
    */
-  public getData(): any {
-    return this.vertex.get('data')
+  public show(): void {
+    this.vertex.set('visible', true)
+    this.canvas.renderAll()
+  }
+
+  /**
+   * 隐藏顶点
+   */
+  public hide(): void {
+    this.vertex.set('visible', false)
+    this.canvas.renderAll()
+  }
+
+  /**
+   * 检查顶点是否可见
+   */
+  public isVisible(): boolean {
+    return this.vertex.visible !== false
   }
 
   /**
@@ -211,6 +267,12 @@ export class ShapeVertex {
   public destroy(): void {
     if (this.vertex) {
       this.vertex.off() // 移除所有事件监听器
+    }
+    
+    // 移除缩放事件监听器
+    if (this.drawBoard && this.zoomListener) {
+      this.drawBoard.un('zoom', this.zoomListener)
+      this.zoomListener = null
     }
   }
 
@@ -225,6 +287,7 @@ export class ShapeVertex {
     height: number,
     isInteractive: boolean,
     callbacks: VertexEventCallbacks = {},
+    drawBoard?: DrawBoardEventEmitter,
   ): ShapeVertex[] {
     const positions = [
       { x: left, y: top, type: VertexType.RECTANGLE_TOP_LEFT },
@@ -245,6 +308,7 @@ export class ShapeVertex {
             vertexIndex: index,
           },
           callbacks,
+          drawBoard,
         ),
     )
   }
@@ -258,10 +322,12 @@ export class ShapeVertex {
     center: { x: number; y: number },
     isInteractive: boolean,
     callbacks: VertexEventCallbacks = {},
+    drawBoard?: DrawBoardEventEmitter,
   ): ShapeVertex[] {
     return points.map((point, index) => {
-      const absoluteX = center.x + point.x
-      const absoluteY = center.y + point.y
+      // points 已经是绝对坐标，直接使用
+      const absoluteX = point.x
+      const absoluteY = point.y
 
       return new ShapeVertex(
         canvas,
@@ -277,6 +343,7 @@ export class ShapeVertex {
           },
         },
         callbacks,
+        drawBoard,
       )
     })
   }

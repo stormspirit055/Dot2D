@@ -1,17 +1,21 @@
 import { Rect, Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
 import type { Canvas } from 'fabric'
-import { ShapeVertex, VertexEventCallbacks } from './ShapeVertex'
+import {
+  ShapeVertex,
+  VertexEventCallbacks,
+  VertexData,
+  VertexType,
+  VertexConfig,
+} from './ShapeVertex'
+import { PointPosition } from './PointCreator'
 
 export interface RectangleOptions {
-  left?: number
-  top?: number
-  width?: number
-  height?: number
+  points: PointPosition[] // 外界传入的4个点坐标（矩形的四个角点）
   fill?: string
   stroke?: string
   strokeWidth?: number
-  data?: ShapeData
+  data: ShapeData
   interactive?: boolean // 是否可交互，默认为 true
 }
 
@@ -20,8 +24,8 @@ export interface RectangleOptions {
  * 负责矩形的创建、顶点管理和事件处理
  */
 export class RectangleCreator extends BaseShapeCreator {
-  constructor(canvas: Canvas, options: ShapeCreatorOptions, onShapeAdded: (shape: any) => void) {
-    super(canvas, options, onShapeAdded)
+  constructor(canvas: Canvas, options: ShapeCreatorOptions) {
+    super(canvas, options)
   }
 
   /**
@@ -31,16 +35,21 @@ export class RectangleCreator extends BaseShapeCreator {
    */
   public createRectangle(options: RectangleOptions): Rect {
     const isInteractive = options.interactive !== false // 默认为 true
-    const width = options.width || 100
-    const height = options.height || 100
 
-    // 应用坐标量化
-    const quantizedPosition = this.quantizePoint({
-      x: options.left || 50,
-      y: options.top || 50,
-    })
-    const left = quantizedPosition.x
-    const top = quantizedPosition.y
+    // 验证传入的点数量
+    if (options.points.length !== 4) {
+      throw new Error('Rectangle requires exactly 4 points')
+    }
+
+    // 应用坐标量化到所有点
+    const quantizedPoints = options.points.map((point) => this.quantizePoint(point))
+
+    // 计算矩形的边界框
+    const bounds = this.calculateBounds(quantizedPoints)
+    const left = bounds.left
+    const top = bounds.top
+    const width = bounds.width
+    const height = bounds.height
 
     // 创建矩形
     const rect = new Rect({
@@ -66,8 +75,8 @@ export class RectangleCreator extends BaseShapeCreator {
       hasBorders: isInteractive, // 保留边框（用于显示选中状态）
     })
 
-    // 创建四个顶点圆点
-    const vertices = this.createVertices(left, top, width, height, isInteractive)
+    // 创建四个顶点圆点（基于传入的角点坐标）
+    const vertices = this.createVerticesFromPoints(quantizedPoints, isInteractive)
 
     // 建立矩形和顶点之间的关联关系
     rect.set('data', {
@@ -77,14 +86,13 @@ export class RectangleCreator extends BaseShapeCreator {
     })
 
     // 为每个顶点添加矩形引用
-    const vertexTypes = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']
-    vertices.forEach((vertex, index) => {
-      const currentData = vertex.get('data') || {}
-      vertex.set('data', { 
+    vertices.forEach((vertex) => {
+      const currentData = (vertex.get('data') as Partial<VertexData>) || {}
+      const newData: Partial<VertexData> = {
         ...currentData,
-        rect: rect, 
-        vertexType: vertexTypes[index] 
-      })
+        shape: rect, // 使用统一的 shape 字段替代 rect
+      }
+      vertex.set('data', newData)
     })
 
     // 为矩形添加移动事件监听器，同步更新顶点位置
@@ -103,51 +111,16 @@ export class RectangleCreator extends BaseShapeCreator {
   }
 
   /**
-   * 创建矩形的四个顶点
-   */
-  private createVertices(
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-    isInteractive: boolean,
-  ): Circle[] {
-    // 创建顶点事件回调
-    const callbacks: VertexEventCallbacks = {
-      onMoving: (vertex: Circle) => {
-        const data = vertex.get('data') as any
-        if (data && data.rect && data.vertexType) {
-          this.updateRectangleFromVertex(vertex, data.rect, data.vertexType)
-        }
-      },
-    }
-
-    // 使用 ShapeVertex 类创建顶点
-    const shapeVertices = ShapeVertex.createRectangleVertices(
-      this.canvas,
-      left,
-      top,
-      width,
-      height,
-      isInteractive,
-      callbacks,
-    )
-
-    // 返回 Circle 对象数组
-    return shapeVertices.map((shapeVertex) => shapeVertex.getVertex())
-  }
-
-
-
-  /**
    * 为矩形添加移动事件监听器
    */
-  private addRectangleEventListeners(rect: Rect, vertices: Circle[]): void {
+  protected addRectangleEventListeners(rect: Rect, vertices: Circle[]): void {
     rect.on('moving', () => {
       // 应用坐标量化到矩形位置
       const quantizedPosition = this.quantizePoint({ x: rect.left!, y: rect.top! })
       rect.set({ left: quantizedPosition.x, top: quantizedPosition.y })
       this.updateVerticesFromRectangle(rect, vertices)
+      // 关键修复：更新矩形的交互区域坐标
+      rect.setCoords()
     })
   }
 
@@ -191,9 +164,26 @@ export class RectangleCreator extends BaseShapeCreator {
         break
     }
 
-    // 确保宽度和高度为正值
-    if (newWidth < 10) newWidth = 10
-    if (newHeight < 10) newHeight = 10
+    // 处理负宽度和负高度的情况 - 实现矩形翻转
+    let flippedHorizontally = false
+    let flippedVertically = false
+
+    if (newWidth < 0) {
+      newLeft = newLeft + newWidth
+      newWidth = Math.abs(newWidth)
+      flippedHorizontally = true
+    }
+
+    if (newHeight < 0) {
+      newTop = newTop + newHeight
+      newHeight = Math.abs(newHeight)
+      flippedVertically = true
+    }
+
+    // 确保最小尺寸
+    const minSize = 10
+    if (newWidth < minSize) newWidth = minSize
+    if (newHeight < minSize) newHeight = minSize
 
     // 应用坐标量化
     const quantizedPosition = this.quantizePoint({ x: newLeft, y: newTop })
@@ -206,41 +196,119 @@ export class RectangleCreator extends BaseShapeCreator {
       height: newHeight,
     })
 
-    // 更新其他顶点位置
-    this.updateOtherVertices(rect, vertexType)
+    // 如果发生了翻转，需要更新顶点类型
+    if (flippedHorizontally || flippedVertically) {
+      this.updateVertexTypesAfterFlip(rect, flippedHorizontally, flippedVertically)
+    } else {
+      // 正常情况下更新其他顶点位置
+      this.updateOtherVertices(rect, vertexType)
+    }
+
+    // 关键修复：更新矩形的交互区域坐标
+    rect.setCoords()
 
     // 重新渲染画布
     this.canvas.renderAll()
   }
 
   /**
-   * 更新其他顶点位置（除了正在拖动的顶点）
+   * 翻转后更新所有顶点的类型和位置
    */
-  private updateOtherVertices(rect: Rect, excludeVertexType: string): void {
-    const data = rect.get('data') as any
+  private updateVertexTypesAfterFlip(rect: Rect, flippedHorizontally: boolean, flippedVertically: boolean): void {
+    const data = rect.get('data') as { vertices?: Circle[] }
     if (!data || !data.vertices) return
 
-    const vertices = data.vertices as Circle[]
+    const vertices = data.vertices
     const rectLeft = rect.left!
     const rectTop = rect.top!
     const rectWidth = rect.width!
     const rectHeight = rect.height!
 
     vertices.forEach((vertex) => {
-      const vertexData = vertex.get('data') as any
+      const vertexData = vertex.get('data') as Partial<VertexData>
+      if (!vertexData || !vertexData.vertexType) return
+
+      let newVertexType = vertexData.vertexType
+      
+      // 根据翻转情况更新顶点类型
+      if (flippedHorizontally && flippedVertically) {
+        // 水平和垂直都翻转
+        switch (vertexData.vertexType) {
+          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
+          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
+          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
+        }
+      } else if (flippedHorizontally) {
+        // 只水平翻转
+        switch (vertexData.vertexType) {
+          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
+          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
+          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
+        }
+      } else if (flippedVertically) {
+        // 只垂直翻转
+        switch (vertexData.vertexType) {
+          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
+          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
+          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
+        }
+      }
+
+      // 更新顶点类型
+      vertexData.vertexType = newVertexType
+
+      // 根据新的顶点类型设置位置
+      switch (newVertexType) {
+        case VertexType.RECTANGLE_TOP_LEFT:
+          vertex.set({ left: rectLeft, top: rectTop })
+          break
+        case VertexType.RECTANGLE_TOP_RIGHT:
+          vertex.set({ left: rectLeft + rectWidth, top: rectTop })
+          break
+        case VertexType.RECTANGLE_BOTTOM_RIGHT:
+          vertex.set({ left: rectLeft + rectWidth, top: rectTop + rectHeight })
+          break
+        case VertexType.RECTANGLE_BOTTOM_LEFT:
+          vertex.set({ left: rectLeft, top: rectTop + rectHeight })
+          break
+      }
+
+      // 更新顶点的交互区域坐标
+      vertex.setCoords()
+    })
+  }
+
+  /**
+   * 更新其他顶点位置（除了正在拖动的顶点）
+   */
+  private updateOtherVertices(rect: Rect, excludeVertexType: string): void {
+    const data = rect.get('data') as { vertices?: Circle[] }
+    if (!data || !data.vertices) return
+
+    const vertices = data.vertices
+    const rectLeft = rect.left!
+    const rectTop = rect.top!
+    const rectWidth = rect.width!
+    const rectHeight = rect.height!
+
+    vertices.forEach((vertex) => {
+      const vertexData = vertex.get('data') as Partial<VertexData>
       if (!vertexData || vertexData.vertexType === excludeVertexType) return
 
       switch (vertexData.vertexType) {
-        case 'topLeft':
+        case VertexType.RECTANGLE_TOP_LEFT:
           vertex.set({ left: rectLeft, top: rectTop })
           break
-        case 'topRight':
+        case VertexType.RECTANGLE_TOP_RIGHT:
           vertex.set({ left: rectLeft + rectWidth, top: rectTop })
           break
-        case 'bottomRight':
+        case VertexType.RECTANGLE_BOTTOM_RIGHT:
           vertex.set({ left: rectLeft + rectWidth, top: rectTop + rectHeight })
           break
-        case 'bottomLeft':
+        case VertexType.RECTANGLE_BOTTOM_LEFT:
           vertex.set({ left: rectLeft, top: rectTop + rectHeight })
           break
       }
@@ -260,24 +328,24 @@ export class RectangleCreator extends BaseShapeCreator {
     const rectHeight = rect.height!
 
     vertices.forEach((vertex) => {
-      const vertexData = vertex.get('data') as any
+      const vertexData = vertex.get('data') as Partial<VertexData>
       if (!vertexData) return
 
       let newPosition: { x: number; y: number }
       switch (vertexData.vertexType) {
-        case 'topLeft':
+        case VertexType.RECTANGLE_TOP_LEFT:
           newPosition = this.quantizePoint({ x: rectLeft, y: rectTop })
           vertex.set({ left: newPosition.x, top: newPosition.y })
           break
-        case 'topRight':
+        case VertexType.RECTANGLE_TOP_RIGHT:
           newPosition = this.quantizePoint({ x: rectLeft + rectWidth, y: rectTop })
           vertex.set({ left: newPosition.x, top: newPosition.y })
           break
-        case 'bottomRight':
+        case VertexType.RECTANGLE_BOTTOM_RIGHT:
           newPosition = this.quantizePoint({ x: rectLeft + rectWidth, y: rectTop + rectHeight })
           vertex.set({ left: newPosition.x, top: newPosition.y })
           break
-        case 'bottomLeft':
+        case VertexType.RECTANGLE_BOTTOM_LEFT:
           newPosition = this.quantizePoint({ x: rectLeft, y: rectTop + rectHeight })
           vertex.set({ left: newPosition.x, top: newPosition.y })
           break
@@ -292,25 +360,79 @@ export class RectangleCreator extends BaseShapeCreator {
   }
 
   /**
-   * 添加默认事件监听器
+   * 计算点集的边界框
+   * @param points 点坐标数组
+   * @returns 边界框信息
    */
-  private addDefaultEventListeners(rect: Rect): void {
-    // 当矩形被选中时，将其顶点置顶
-    rect.on('selected', () => {
-      const data = rect.get('data') as any
-      if (data && data.vertices) {
-        const vertices = data.vertices as Circle[]
-        vertices.forEach((vertex) => {
-          this.canvas.bringObjectToFront(vertex)
-        })
-        this.canvas.renderAll()
+  private calculateBounds(points: { x: number; y: number }[]): {
+    left: number
+    top: number
+    width: number
+    height: number
+  } {
+    if (points.length === 0) {
+      return { left: 0, top: 0, width: 0, height: 0 }
+    }
+
+    const xs = points.map((p) => p.x)
+    const ys = points.map((p) => p.y)
+
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+
+    return {
+      left: minX,
+      top: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    }
+  }
+
+  /**
+   * 基于传入的角点坐标创建顶点
+   * @param points 4个角点坐标
+   * @param isInteractive 是否可交互
+   * @returns 顶点圆点数组
+   */
+  private createVerticesFromPoints(
+    points: { x: number; y: number }[],
+    isInteractive: boolean,
+  ): Circle[] {
+    // 创建顶点事件回调
+    const callbacks: VertexEventCallbacks = {
+      onMoving: (vertex: Circle) => {
+        const data = vertex.get('data') as Partial<VertexData>
+        if (data && data.shape && data.vertexType) {
+          this.updateRectangleFromVertex(vertex, data.shape as Rect, data.vertexType as string)
+        }
+      },
+    }
+
+    // 为每个角点创建顶点
+    const vertices: Circle[] = []
+    const vertexTypes = [
+      VertexType.RECTANGLE_TOP_LEFT,
+      VertexType.RECTANGLE_TOP_RIGHT,
+      VertexType.RECTANGLE_BOTTOM_RIGHT,
+      VertexType.RECTANGLE_BOTTOM_LEFT,
+    ]
+
+    points.forEach((point, index) => {
+      const config: VertexConfig = {
+        x: point.x,
+        y: point.y,
+        isInteractive,
+        vertexType: vertexTypes[index % 4],
       }
+
+      const shapeVertex = new ShapeVertex(this.canvas, config, callbacks, this.drawBoard)
+      const vertex = shapeVertex.getVertex()
+
+      vertices.push(vertex)
     })
 
-    // 当矩形取消选中时的处理（可选）
-    rect.on('deselected', () => {
-      // 这里可以添加取消选中时的逻辑
-      // 例如恢复顶点的原始层级等
-    })
+    return vertices
   }
 }

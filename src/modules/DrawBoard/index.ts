@@ -1,9 +1,8 @@
 import EventEmitter from '../EventEmitter'
-import { type GenericPlugin } from '../BasePlugin'
+import { type GenericDrawBoardPlugin } from '../BasePlugin'
 import {
   Canvas,
   Point,
-  TMat2D,
   type TPointerEvent,
   type TPointerEventInfo,
   type CanvasEvents,
@@ -12,6 +11,7 @@ import WheelZoomPlugin from './plugins/WheelZoomPlugin'
 import CanvasDragPlugin from './plugins/CanvasDragPlugin'
 import ShapePlugin from './plugins/ShapePlugin'
 import ImagePlugin from './plugins/ImagePlugin'
+import CanvasRotatePlugin from './plugins/CanvasRotatePlugin'
 export type DrawBoradEvents = {
   load: []
   zoom: [number]
@@ -27,16 +27,17 @@ export type DrawBoradOptions = {
   width: number
   height: number
   id: string
-  plugins?: GenericPlugin[]
+  plugins?: GenericDrawBoardPlugin[]
   img?: string
 }
 export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   canvas!: Canvas
   canvasDom!: HTMLCanvasElement
-  plugins: GenericPlugin[] = []
+  plugins: GenericDrawBoardPlugin[] = []
   options?: DrawBoradOptions
   imagePlugin?: ImagePlugin
   shapePlugin?: ShapePlugin
+  angle: number = 0
   protected subscriptions: Array<() => void> = []
   constructor(options: DrawBoradOptions) {
     super()
@@ -57,8 +58,9 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   // 缩放一定比例， 图片位置不动
   zoom(scale: number): void
   // 缩放比例， 将图片移至中心位置
-  zoom(scale: number, point: Point): void
-  zoom(scale?: number, point?: Point) {
+  zoom(scale: number, point?: Point): void
+  zoom(scale?: number, point?: Point): void {
+    if (!this.canvas) return
     if (scale) {
       if (point) {
         this.canvas?.zoomToPoint(point, scale)
@@ -66,38 +68,40 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
         this.canvas.setZoom(scale)
       }
       this.emit('zoom', scale)
-      // 对所有顶点进行缩放补偿，使其保持固定视觉大小
-      this.compensateVertexScaling(scale)
     } else {
       this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0])
       this.emit('zoom', 1)
-      // 重置时也需要补偿顶点缩放
-      this.compensateVertexScaling(1)
     }
   }
-  rotate(angleDeg: number) {
-    // const angleDeg = 30 // 旋转角度
-    const angleRad = (angleDeg * Math.PI) / 180 // 弧度
 
-    const cos = Math.cos(angleRad)
-    const sin = Math.sin(angleRad)
-
-    // 画布中心
-    const centerX = this.canvas.getWidth() / 2
-    const centerY = this.canvas.getHeight() / 2
-
-    // 构造旋转视口矩阵：先平移到中心，再旋转，再平移回来
-    const transform: TMat2D = [
+  rotate(angle: number = 90) {
+    console.log('rotate')
+    if (!this.canvas) return
+    // 获取画布中心点
+    const canvasWidth = this.canvas.getWidth()
+    const canvasHeight = this.canvas.getHeight()
+    const centerX = canvasWidth / 2
+    const centerY = canvasHeight / 2
+    // 将角度转换为弧度
+    this.angle += angle
+    const radians = (this.angle * Math.PI) / 180
+    // 计算旋转变换矩阵
+    const cos = Math.cos(radians)
+    const sin = Math.sin(radians)
+    // 创建旋转变换矩阵：先平移到中心，旋转，再平移回来
+    const transform = [
       cos,
       sin,
       -sin,
       cos,
-      centerX - cos * centerX + sin * centerY,
-      centerY - sin * centerX - cos * centerY,
+      centerX - centerX * cos + centerY * sin,
+      centerY - centerX * sin - centerY * cos,
     ]
-
-    this.canvas.setViewportTransform(transform)
+    // 应用变换到画布视口
+    this.canvas.setViewportTransform(transform as [number, number, number, number, number, number])
+    // 重新渲染
     this.canvas.requestRenderAll()
+    // console.log(`画布旋转角度: ${currentRotation.value}°`)
   }
   get zoomLevel() {
     return this.canvas.getZoom()
@@ -138,6 +142,13 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     this.registerPlugin(CanvasDragPlugin.create())
     this.shapePlugin = this.registerPlugin(ShapePlugin.create())
     this.imagePlugin = this.registerPlugin(ImagePlugin.create())
+    // 注册旋转插件：按 'r' 顺时针旋转 90°，按 'Shift+R' 逆时针旋转 90°
+    this.registerPlugin(
+      CanvasRotatePlugin.create({
+        shortCut: 'r',
+        step: 90,
+      }),
+    )
   }
   private initEvents() {
     const eventMap = {
@@ -158,7 +169,7 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   getCanvas(): Canvas {
     return this.canvas
   }
-  private registerPlugin<T extends GenericPlugin>(plugin: T): T {
+  private registerPlugin<T extends GenericDrawBoardPlugin>(plugin: T): T {
     plugin._init(this)
     this.plugins.push(plugin)
     this.subscriptions.push(
@@ -169,34 +180,8 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     return plugin
   }
 
-  public use<T extends GenericPlugin>(plugin: T): T {
+  public use<T extends GenericDrawBoardPlugin>(plugin: T): T {
     return this.registerPlugin(plugin)
-  }
-
-  /**
-   * 对所有顶点进行缩放补偿，使其在画布缩放时保持固定的视觉大小
-   * @param zoomLevel 当前画布的缩放级别
-   */
-  private compensateVertexScaling(zoomLevel: number): void {
-    if (!this.canvas) return
-
-    // 计算反向缩放比例
-    const compensationScale = 1 / zoomLevel
-
-    // 遍历画布上的所有对象
-    this.canvas.getObjects().forEach((obj) => {
-      // 检查是否是顶点对象（Circle 类型且有 isVertex 标识）
-      if (obj.type === 'circle' && (obj as any).isVertex) {
-        // 设置反向缩放比例，抵消画布缩放的影响
-        obj.set({
-          scaleX: compensationScale,
-          scaleY: compensationScale,
-        })
-      }
-    })
-
-    // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   public destroy(): void {
@@ -206,20 +191,17 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
         plugin.destroy()
       }
     })
-    this.plugins = []
-
-    // 清理所有订阅
-    this.subscriptions.forEach((unsubscribe) => unsubscribe())
-    this.subscriptions = []
 
     // 清理画布
     if (this.canvas) {
       this.canvas.dispose()
     }
 
-    // 移除 DOM 元素
-    if (this.canvasDom && this.canvasDom.parentNode) {
-      this.canvasDom.parentNode.removeChild(this.canvasDom)
-    }
+    // 清理订阅
+    this.subscriptions.forEach((unsubscribe) => unsubscribe())
+    this.subscriptions = []
+
+    // 清理事件监听器
+    this.unAll()
   }
 }

@@ -13,11 +13,12 @@ import type { ShapeCreatorOptions } from './shapes/BaseShapeCreator'
 // 重新导出选项类型
 export type { RectangleOptions } from './shapes/RectangleCreator'
 export type { PolygonOptions } from './shapes/PolygonCreator'
-export type { PointOptions } from './shapes/PointCreator'
+export type { PointOptions, PointPosition } from './shapes/PointCreator'
 
 export type ShapePluginEvents = BasePluginEvents & {
   shapeAdded: [shape: FabricObject]
   shapeRemoved: [shape: FabricObject]
+  shapeSelected: [shape: FabricObject]
 }
 
 export type ShapePluginOptions = {
@@ -67,8 +68,6 @@ export default class ShapePlugin extends BasePlugin<
 
   protected onInit(): void {
     this.canvas = this.host?.getCanvas()
-
-    console.log('onInit')
     if (!this.canvas) {
       console.warn('ShapePlugin: Canvas not available')
       return
@@ -76,6 +75,9 @@ export default class ShapePlugin extends BasePlugin<
 
     // 初始化创建器
     this.initializeCreators()
+
+    // 监听形状选中事件
+    this.setupShapeSelectionListener()
   }
 
   /**
@@ -89,16 +91,60 @@ export default class ShapePlugin extends BasePlugin<
       defaultStrokeColor: this.options.defaultStrokeColor,
       defaultStrokeWidth: this.options.defaultStrokeWidth,
       coordinateGrid: this.options.coordinateGrid,
+      drawBoard: this.host, // 传入 DrawBoard 实例
+      onShapeAdded: (shape: FabricObject) => {
+        this.shapes.push(shape)
+        this.emit('shapeAdded', shape)
+      },
+      onShapeModified: (shape: FabricObject) => {
+        // 可以在这里添加形状修改时的逻辑
+        console.log('Shape modified:', shape)
+      },
+      onShapeRemoved: (shape: FabricObject) => {
+        // 从形状数组中移除
+        const index = this.shapes.indexOf(shape)
+        if (index > -1) {
+          this.shapes.splice(index, 1)
+        }
+        this.emit('shapeRemoved', shape)
+      },
     }
 
-    const onShapeAdded = (shape: FabricObject) => {
-      this.shapes.push(shape)
-      this.emit('shapeAdded', shape)
-    }
+    this.rectangleCreator = new RectangleCreator(this.canvas, creatorOptions)
+    this.polygonCreator = new PolygonCreator(this.canvas, creatorOptions)
+    this.pointCreator = new PointCreator(this.canvas, creatorOptions)
+  }
 
-    this.rectangleCreator = new RectangleCreator(this.canvas, creatorOptions, onShapeAdded)
-    this.polygonCreator = new PolygonCreator(this.canvas, creatorOptions, onShapeAdded)
-    this.pointCreator = new PointCreator(this.canvas, creatorOptions, onShapeAdded)
+  /**
+   * 设置形状选中事件监听器
+   */
+  private setupShapeSelectionListener(): void {
+    if (!this.canvas) return
+
+    // 监听画布上的对象选中事件
+    this.canvas.on('selection:created', (event) => {
+      this.handleShapeSelection(event)
+    })
+
+    this.canvas.on('selection:updated', (event) => {
+      this.handleShapeSelection(event)
+    })
+  }
+
+  /**
+   * 处理形状选中事件
+   */
+  private handleShapeSelection(event: { selected?: FabricObject[] }): void {
+    if (!event.selected || !Array.isArray(event.selected)) return
+
+    // 遍历所有被选中的对象
+    event.selected.forEach((selectedObject: FabricObject) => {
+      // 检查被选中的对象是否是由 ShapePlugin 管理的形状
+      if (this.shapes.includes(selectedObject)) {
+        // 触发 shapeSelected 事件
+        this.emit('shapeSelected', selectedObject)
+      }
+    })
   }
 
   /**
@@ -131,17 +177,6 @@ export default class ShapePlugin extends BasePlugin<
     return this.options.coordinateGrid
   }
 
-  public addShape(shape: FabricObject): void {
-    if (!this.canvas) {
-      console.warn('ShapePlugin: Canvas not available')
-      return
-    }
-
-    this.canvas.add(shape)
-    this.shapes.push(shape)
-    this.emit('shapeAdded', shape)
-  }
-
   /**
    * 添加矩形到画布（使用 RectangleCreator）
    * @param options 矩形配置选项
@@ -169,9 +204,9 @@ export default class ShapePlugin extends BasePlugin<
   /**
    * 添加点到画布（使用 PointCreator）
    * @param options 点配置选项
-   * @returns 创建的点对象（Circle）
+   * @returns 创建的点对象数组
    */
-  public addPoint(options: import('./shapes/PointCreator').PointOptions): Circle {
+  public addPoints(options: import('./shapes/PointCreator').PointOptions): Circle[] {
     if (!this.pointCreator) {
       throw new Error('ShapePlugin: PointCreator not initialized')
     }
@@ -188,17 +223,23 @@ export default class ShapePlugin extends BasePlugin<
       return
     }
 
-    // 从画布移除
-    this.canvas.remove(shape)
-
-    // 从形状数组中移除
-    const index = this.shapes.indexOf(shape)
-    if (index > -1) {
-      this.shapes.splice(index, 1)
+    // 使用创建器的 removeShapeFromCanvas 方法
+    // 这将自动触发 onShapeRemoved 回调
+    if (this.rectangleCreator) {
+      this.rectangleCreator.removeShapeFromCanvas(shape)
+    } else if (this.polygonCreator) {
+      this.polygonCreator.removeShapeFromCanvas(shape)
+    } else if (this.pointCreator) {
+      this.pointCreator.removeShapeFromCanvas(shape)
+    } else {
+      // 如果没有创建器可用，直接移除
+      this.canvas.remove(shape)
+      const index = this.shapes.indexOf(shape)
+      if (index > -1) {
+        this.shapes.splice(index, 1)
+      }
+      this.emit('shapeRemoved', shape)
     }
-
-    // 触发形状移除事件
-    this.emit('shapeRemoved', shape)
   }
 
   /**

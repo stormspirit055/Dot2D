@@ -3,9 +3,10 @@
     <div class="toolbar">
       <h2>绘图板</h2>
       <div class="toolbar-buttons">
+        <button @click="rotateCanvas" class="btn btn-primary">旋转画布</button>
         <button @click="addRectangle" class="btn btn-primary">添加矩形</button>
         <button @click="addPolygon" class="btn btn-primary">添加多边形</button>
-        <button @click="addPoint" class="btn btn-primary">添加点</button>
+        <button @click="addPoints" class="btn btn-primary">添加多个点</button>
         <button @click="loadImage" class="btn btn-success" :disabled="loading">
           {{ loading ? '加载中...' : '加载图片' }}
         </button>
@@ -32,26 +33,26 @@
       </div>
       <div class="grid-controls">
         <div class="preset-buttons">
-          <button 
-            @click="setCoordinateGrid(1)" 
+          <button
+            @click="setCoordinateGrid(1)"
             :class="currentCoordinateGrid === 1 ? 'btn btn-grid active' : 'btn btn-grid'"
           >
             整数坐标 (1)
           </button>
-          <button 
-            @click="setCoordinateGrid(0.5)" 
+          <button
+            @click="setCoordinateGrid(0.5)"
             :class="currentCoordinateGrid === 0.5 ? 'btn btn-grid active' : 'btn btn-grid'"
           >
             半像素 (0.5)
           </button>
-          <button 
-            @click="setCoordinateGrid(5)" 
+          <button
+            @click="setCoordinateGrid(5)"
             :class="currentCoordinateGrid === 5 ? 'btn btn-grid active' : 'btn btn-grid'"
           >
             5像素网格 (5)
           </button>
-          <button 
-            @click="setCoordinateGrid(10)" 
+          <button
+            @click="setCoordinateGrid(10)"
             :class="currentCoordinateGrid === 10 ? 'btn btn-grid active' : 'btn btn-grid'"
           >
             10像素网格 (10)
@@ -59,12 +60,12 @@
         </div>
         <div class="custom-grid">
           <label for="customGrid">自定义粒度:</label>
-          <input 
+          <input
             id="customGrid"
-            v-model.number="customGridValue" 
-            type="number" 
-            step="0.1" 
-            min="0.1" 
+            v-model.number="customGridValue"
+            type="number"
+            step="0.1"
+            min="0.1"
             max="100"
             class="grid-input"
             @keyup.enter="setCoordinateGrid(customGridValue)"
@@ -73,7 +74,10 @@
         </div>
       </div>
       <div class="grid-explanation">
-        <p><strong>说明:</strong> 坐标粒度控制可以限制图形的坐标精度。设置为1时，所有图形坐标都会是整数；设置为0.5时，坐标会是0.5的倍数；设置为10时，坐标会是10的倍数。这有助于保持图形对齐和精确定位。</p>
+        <p>
+          <strong>说明:</strong>
+          坐标粒度控制可以限制图形的坐标精度。设置为1时，所有图形坐标都会是整数；设置为0.5时，坐标会是0.5的倍数；设置为10时，坐标会是10的倍数。这有助于保持图形对齐和精确定位。
+        </p>
       </div>
     </div>
 
@@ -100,12 +104,12 @@ const setCoordinateGrid = (grid: number) => {
     console.warn('ShapePlugin not available')
     return
   }
-  
+
   if (grid <= 0) {
     console.warn('坐标粒度必须大于0')
     return
   }
-  
+
   drawBoard.shapePlugin.setCoordinateGrid(grid)
   currentCoordinateGrid.value = grid
   console.log(`坐标粒度已设置为: ${grid}`)
@@ -128,10 +132,18 @@ onMounted(() => {
       height: canvasRef.value.clientHeight,
       id: 'drawboard-canvas',
     })
+    if (drawBoard.shapePlugin) {
+      drawBoard.shapePlugin.on('shapeAdded', (shape) => {
+        // console.log('添加新图形:', shape)
+      })
 
+      drawBoard.shapePlugin.on('shapeSelected', (shape) => {
+        // console.log('选中图形:', shape)
+      })
+    }
     // 监听事件
     drawBoard.on('zoom', (data) => {
-      console.log('缩放事件:', data)
+      // console.log('缩放事件:', data)
     })
 
     // 初始化坐标粒度为整数坐标
@@ -152,14 +164,24 @@ onUnmounted(() => {
 // 添加矩形
 const addRectangle = () => {
   if (drawBoard?.shapePlugin) {
-    const randomColor = `hsl(${Math.random() * 360}, 70%, 60%)`
+    const randomColor = `hsla(${Math.random() * 360}, 70%, 60%, 0.7)`
     const rectId = Date.now().toString()
 
+    // 生成随机的四个角点坐标
+    const baseX = Math.random() * 300 + 50
+    const baseY = Math.random() * 200 + 50
+    const width = 200
+    const height = 160
+
+    const points = [
+      { x: baseX, y: baseY }, // 左上角
+      { x: baseX + width, y: baseY }, // 右上角
+      { x: baseX + width, y: baseY + height }, // 右下角
+      { x: baseX, y: baseY + height }, // 左下角
+    ]
+
     drawBoard?.shapePlugin.addRectangle({
-      left: Math.random() * 300 + 50,
-      top: Math.random() * 200 + 50,
-      width: 200,
-      height: 160,
+      points: points,
       fill: randomColor,
       interactive: true,
       data: {
@@ -173,16 +195,25 @@ const addRectangle = () => {
 // 添加多边形
 const addPolygon = () => {
   if (drawBoard?.shapePlugin) {
-    const randomColor = `hsl(${Math.random() * 360}, 70%, 60%)`
+    const randomColor = `hsla(${Math.random() * 360}, 70%, 60%, 0.7)`
     const polygonId = Date.now().toString()
 
+    // 生成随机多边形点坐标
+    const centerX = Math.random() * 400 + 200
+    const centerY = Math.random() * 300 + 150
+    const radius = 60 + Math.random() * 40 // 随机半径 60-100
+    const pointCount = 10 // 固定10个点
+
+    const points = []
+    for (let i = 0; i < pointCount; i++) {
+      const angle = (i / pointCount) * 2 * Math.PI
+      const x = centerX + Math.cos(angle) * radius
+      const y = centerY + Math.sin(angle) * radius
+      points.push({ x, y })
+    }
+
     drawBoard?.shapePlugin.addPolygon({
-      center: {
-        x: Math.random() * 400 + 200,
-        y: Math.random() * 300 + 150,
-      },
-      radius: 60 + Math.random() * 40, // 随机半径 60-100
-      pointCount: 10, // 固定10个点
+      points: points,
       fill: randomColor,
       stroke: '#333',
       strokeWidth: 2,
@@ -195,22 +226,30 @@ const addPolygon = () => {
   }
 }
 
-// 添加点
-const addPoint = () => {
+// 批量添加多个点
+const addPoints = () => {
   if (drawBoard?.shapePlugin) {
-    const randomColor = `hsl(${Math.random() * 360}, 70%, 60%)`
-    const pointId = Date.now().toString()
+    // 生成5-8个随机点
+    const pointCount = Math.floor(Math.random() * 4) + 5 // 5-8个点
+    const points = []
 
-    drawBoard?.shapePlugin.addPoint({
-      position: {
+    for (let i = 0; i < pointCount; i++) {
+      points.push({
         x: Math.random() * 500 + 100,
         y: Math.random() * 300 + 100,
-      },
-      radius: 8, // 点的半径
+      })
+    }
+
+    const randomColor = `hsla(${Math.random() * 360}, 70%, 60%, 0.7)`
+    const pointId = `${Date.now()}`
+
+    // 使用新的统一接口
+    drawBoard.shapePlugin.addPoints({
+      points: points,
       fill: randomColor,
       stroke: '#333',
       strokeWidth: 2,
-      interactive: true, // 默认可交互
+      interactive: true,
       data: {
         id: pointId,
         DrawType: 'point',
@@ -272,6 +311,9 @@ const toggleShapesControl = () => {
   shapesInteractive.value = drawBoard.shapePlugin.getCurrentInteractivityState()
 
   console.log(`矩形控制状态已切换为: ${shapesInteractive.value ? '可控制' : '不可控制'}`)
+}
+const rotateCanvas = () => {
+  drawBoard?.rotate(90)
 }
 </script>
 
