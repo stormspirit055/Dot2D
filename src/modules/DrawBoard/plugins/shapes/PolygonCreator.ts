@@ -32,9 +32,9 @@ export class PolygonCreator extends BaseShapeCreator {
     const isInteractive = options.interactive !== false // 默认为 true
 
     // 使用外界传入的点坐标，并应用坐标量化
-    const points: { x: number; y: number }[] = options.points.map((point) => {
-      return this.quantizePoint(point)
-    })
+    const points: { x: number; y: number }[] = options.points
+      .map((point) => this.mapInputPoint(point))
+      .map((point) => this.quantizePoint(point))
 
     // 计算多边形的中心点（用于定位）
     const center = this.calculatePolygonCenter(points)

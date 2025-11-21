@@ -12,7 +12,9 @@ import CanvasDragPlugin from './plugins/CanvasDragPlugin'
 import ShapePlugin from './plugins/ShapePlugin'
 import ImagePlugin from './plugins/ImagePlugin'
 import CanvasRotatePlugin from './plugins/CanvasRotatePlugin'
+import MousePositionPlugin from './plugins/MousePositionPlugin'
 export type DrawBoradEvents = {
+  rotate: [angle: number]
   load: []
   zoom: [number]
   mouseDown: [e: TPointerEventInfo]
@@ -39,6 +41,8 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   shapePlugin?: ShapePlugin
   angle: number = 0
   protected subscriptions: Array<() => void> = []
+  overlayEl?: HTMLCanvasElement
+  overlayCtx?: CanvasRenderingContext2D
   constructor(options: DrawBoradOptions) {
     super()
     this.options = options
@@ -69,36 +73,19 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
       }
       this.emit('zoom', scale)
     } else {
-      this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0])
+      this.canvas.setZoom(1)
+      // this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0])
       this.emit('zoom', 1)
     }
   }
 
   rotate(angle: number = 90) {
-    console.log('rotate')
     if (!this.canvas) return
-    // 获取画布中心点
-    const canvasWidth = this.canvas.getWidth()
-    const canvasHeight = this.canvas.getHeight()
-    const centerX = canvasWidth / 2
-    const centerY = canvasHeight / 2
-    // 将角度转换为弧度
-    this.angle += angle
-    const radians = (this.angle * Math.PI) / 180
-    // 计算旋转变换矩阵
-    const cos = Math.cos(radians)
-    const sin = Math.sin(radians)
-    // 创建旋转变换矩阵：先平移到中心，旋转，再平移回来
-    const transform = [
-      cos,
-      sin,
-      -sin,
-      cos,
-      centerX - centerX * cos + centerY * sin,
-      centerY - centerX * sin - centerY * cos,
-    ]
-    // 应用变换到画布视口
-    this.canvas.setViewportTransform(transform as [number, number, number, number, number, number])
+
+    this.angle = this.angle === 270 ? 0 : angle + this.angle
+
+    // this.zoom()
+    this.emit('rotate', this.angle)
     // 重新渲染
     this.canvas.requestRenderAll()
     // console.log(`画布旋转角度: ${currentRotation.value}°`)
@@ -130,6 +117,21 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
       selection: false, // 启用对象选择
       preserveObjectStacking: true, // 保持对象层级顺序，防止选中时自动置顶
     })
+    const wrapper = this.canvas.wrapperEl
+    const upper = this.canvas.upperCanvasEl
+    const el = document.createElement('canvas')
+    el.className = (upper?.className || '').replace('upper-canvas', '')
+    el.classList.add('drawboard-overlay')
+    el.setAttribute('data-overlay', 'drawboard')
+    el.style.position = 'absolute'
+    el.style.left = '0'
+    el.style.top = '0'
+    el.style.pointerEvents = 'none'
+    el.width = upper?.width || this.canvas.getWidth()
+    el.height = upper?.height || this.canvas.getHeight()
+    wrapper.appendChild(el)
+    this.overlayEl = el
+    this.overlayCtx = el.getContext('2d') || undefined
   }
   private initPlugins() {
     if (!this.options?.plugins?.length) return
@@ -140,9 +142,9 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   private initDefaultPlugins() {
     this.registerPlugin(WheelZoomPlugin.create())
     this.registerPlugin(CanvasDragPlugin.create())
+    this.registerPlugin(MousePositionPlugin.create())
     this.shapePlugin = this.registerPlugin(ShapePlugin.create())
     this.imagePlugin = this.registerPlugin(ImagePlugin.create())
-    // 注册旋转插件：按 'r' 顺时针旋转 90°，按 'Shift+R' 逆时针旋转 90°
     this.registerPlugin(
       CanvasRotatePlugin.create({
         shortCut: 'r',
@@ -161,13 +163,69 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     } as const
     Object.entries(eventMap).forEach(([fabricEvent, customEvent]) => {
       this.canvas.on(fabricEvent as keyof CanvasEvents, (opt: TPointerEventInfo<TPointerEvent>) => {
-        this.emit(customEvent as keyof DrawBoradEvents, opt)
+        this.emit(customEvent, opt)
       })
     })
   }
 
   getCanvas(): Canvas {
     return this.canvas
+  }
+  setCoordinateOrigin(x: number, y: number) {
+    const vpt = this.canvas.viewportTransform
+    if (vpt) {
+      vpt[4] = -x
+      vpt[5] = -y
+      this.canvas.setViewportTransform(vpt as [number, number, number, number, number, number])
+      this.canvas.requestRenderAll()
+    } else {
+      this.canvas.setViewportTransform([1, 0, 0, 1, -x, -y])
+      this.canvas.requestRenderAll()
+    }
+  }
+  getOverlayElement(): HTMLCanvasElement | undefined {
+    return this.overlayEl
+  }
+  getOverlayContext(): CanvasRenderingContext2D | undefined {
+    return this.overlayCtx
+  }
+  clearOverlay(): void {
+    if (this.overlayEl && this.overlayCtx) {
+      this.overlayCtx.setTransform(1, 0, 0, 1, 0, 0)
+      this.overlayCtx.clearRect(0, 0, this.overlayEl.width, this.overlayEl.height)
+    }
+  }
+  imageToScene(point: { x: number; y: number }): { x: number; y: number } {
+    const img = this.getImage()
+    if (!img) return point
+    const cx = img.getCenterPoint().x
+    const cy = img.getCenterPoint().y
+    const angle = (img.angle || 0) * (Math.PI / 180)
+    const scaleX = img.scaleX || 1
+    const scaleY = img.scaleY || 1
+    const w = img.width || 0
+    const h = img.height || 0
+    const dx = (point.x - w / 2) * scaleX
+    const dy = (point.y - h / 2) * scaleY
+    const rx = dx * Math.cos(angle) - dy * Math.sin(angle)
+    const ry = dx * Math.sin(angle) + dy * Math.cos(angle)
+    return { x: cx + rx, y: cy + ry }
+  }
+  sceneToImage(point: { x: number; y: number }): { x: number; y: number } {
+    const img = this.getImage()
+    if (!img) return point
+    const cx = img.getCenterPoint().x
+    const cy = img.getCenterPoint().y
+    const angle = (img.angle || 0) * (Math.PI / 180)
+    const scaleX = img.scaleX || 1
+    const scaleY = img.scaleY || 1
+    const w = img.width || 0
+    const h = img.height || 0
+    const dx = point.x - cx
+    const dy = point.y - cy
+    const ix = dx * Math.cos(-angle) - dy * Math.sin(-angle)
+    const iy = dx * Math.sin(-angle) + dy * Math.cos(-angle)
+    return { x: ix / scaleX + w / 2, y: iy / scaleY + h / 2 }
   }
   private registerPlugin<T extends GenericDrawBoardPlugin>(plugin: T): T {
     plugin._init(this)
@@ -195,6 +253,12 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     // 清理画布
     if (this.canvas) {
       this.canvas.dispose()
+    }
+
+    if (this.overlayEl && this.overlayEl.parentNode) {
+      this.overlayEl.parentNode.removeChild(this.overlayEl)
+      this.overlayEl = undefined
+      this.overlayCtx = undefined
     }
 
     // 清理订阅

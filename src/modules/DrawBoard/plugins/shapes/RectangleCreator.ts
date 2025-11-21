@@ -42,7 +42,9 @@ export class RectangleCreator extends BaseShapeCreator {
     }
 
     // 应用坐标量化到所有点
-    const quantizedPoints = options.points.map((point) => this.quantizePoint(point))
+    const quantizedPoints = options.points
+      .map((point) => this.mapInputPoint(point))
+      .map((point) => this.quantizePoint(point))
 
     // 计算矩形的边界框
     const bounds = this.calculateBounds(quantizedPoints)
@@ -214,7 +216,11 @@ export class RectangleCreator extends BaseShapeCreator {
   /**
    * 翻转后更新所有顶点的类型和位置
    */
-  private updateVertexTypesAfterFlip(rect: Rect, flippedHorizontally: boolean, flippedVertically: boolean): void {
+  private updateVertexTypesAfterFlip(
+    rect: Rect,
+    flippedHorizontally: boolean,
+    flippedVertically: boolean,
+  ): void {
     const data = rect.get('data') as { vertices?: Circle[] }
     if (!data || !data.vertices) return
 
@@ -229,31 +235,55 @@ export class RectangleCreator extends BaseShapeCreator {
       if (!vertexData || !vertexData.vertexType) return
 
       let newVertexType = vertexData.vertexType
-      
+
       // 根据翻转情况更新顶点类型
       if (flippedHorizontally && flippedVertically) {
         // 水平和垂直都翻转
         switch (vertexData.vertexType) {
-          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
-          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
-          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
-          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
+          case VertexType.RECTANGLE_TOP_LEFT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT
+            break
+          case VertexType.RECTANGLE_TOP_RIGHT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT
+            break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT:
+            newVertexType = VertexType.RECTANGLE_TOP_LEFT
+            break
+          case VertexType.RECTANGLE_BOTTOM_LEFT:
+            newVertexType = VertexType.RECTANGLE_TOP_RIGHT
+            break
         }
       } else if (flippedHorizontally) {
         // 只水平翻转
         switch (vertexData.vertexType) {
-          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
-          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
-          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
-          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
+          case VertexType.RECTANGLE_TOP_LEFT:
+            newVertexType = VertexType.RECTANGLE_TOP_RIGHT
+            break
+          case VertexType.RECTANGLE_TOP_RIGHT:
+            newVertexType = VertexType.RECTANGLE_TOP_LEFT
+            break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT
+            break
+          case VertexType.RECTANGLE_BOTTOM_LEFT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT
+            break
         }
       } else if (flippedVertically) {
         // 只垂直翻转
         switch (vertexData.vertexType) {
-          case VertexType.RECTANGLE_TOP_LEFT: newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT; break
-          case VertexType.RECTANGLE_TOP_RIGHT: newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT; break
-          case VertexType.RECTANGLE_BOTTOM_RIGHT: newVertexType = VertexType.RECTANGLE_TOP_RIGHT; break
-          case VertexType.RECTANGLE_BOTTOM_LEFT: newVertexType = VertexType.RECTANGLE_TOP_LEFT; break
+          case VertexType.RECTANGLE_TOP_LEFT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_LEFT
+            break
+          case VertexType.RECTANGLE_TOP_RIGHT:
+            newVertexType = VertexType.RECTANGLE_BOTTOM_RIGHT
+            break
+          case VertexType.RECTANGLE_BOTTOM_RIGHT:
+            newVertexType = VertexType.RECTANGLE_TOP_RIGHT
+            break
+          case VertexType.RECTANGLE_BOTTOM_LEFT:
+            newVertexType = VertexType.RECTANGLE_TOP_LEFT
+            break
         }
       }
 

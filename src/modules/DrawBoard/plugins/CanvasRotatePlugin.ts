@@ -26,21 +26,36 @@ function parseShortcut(shortcut: string): ParsedShortcut {
     ctrl: parts.includes('ctrl') || parts.includes('control'),
     alt: parts.includes('alt'),
     shift: parts.includes('shift'),
-    meta: parts.includes('meta') || parts.includes('cmd') || parts.includes('command') || parts.includes('win'),
+    meta:
+      parts.includes('meta') ||
+      parts.includes('cmd') ||
+      parts.includes('command') ||
+      parts.includes('win'),
   }
-  const key = parts.filter(
-    (p) => !['ctrl', 'control', 'alt', 'shift', 'meta', 'cmd', 'command', 'win'].includes(p),
-  )[0] || ''
+  const key =
+    parts.filter(
+      (p) => !['ctrl', 'control', 'alt', 'shift', 'meta', 'cmd', 'command', 'win'].includes(p),
+    )[0] || ''
   return { ...mod, key }
 }
 
 function matchShortcut(e: KeyboardEvent, s: ParsedShortcut): boolean {
   // 统一比较 key（字母转小写），允许 e.key 与配置一致
   const k = (e.key || '').toLowerCase()
-  return e.ctrlKey === s.ctrl && e.altKey === s.alt && e.shiftKey === s.shift && e.metaKey === s.meta && k === s.key
+  return (
+    e.ctrlKey === s.ctrl &&
+    e.altKey === s.alt &&
+    e.shiftKey === s.shift &&
+    e.metaKey === s.meta &&
+    k === s.key
+  )
 }
 
-export default class CanvasRotatePlugin extends BasePlugin<CanvasRotatePluginEvents, CanvasRotatePluginOptions, DrawBorad> {
+export default class CanvasRotatePlugin extends BasePlugin<
+  CanvasRotatePluginEvents,
+  CanvasRotatePluginOptions,
+  DrawBorad
+> {
   private keydownHandler?: (e: KeyboardEvent) => void
   private parsedShortcut: ParsedShortcut
   private step: number

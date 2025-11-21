@@ -1,11 +1,12 @@
-import { Canvas, Circle, type FabricObject } from 'fabric'
-
-// 添加 DrawBoard 类型导入
-type DrawBoardEventEmitter = {
-  on(event: 'zoom', listener: (zoomLevel: number) => void): void
-  un(event: 'zoom', listener: (zoomLevel: number) => void): void
-}
-
+import {
+  Canvas,
+  Circle,
+  FabricObjectProps,
+  ObjectEvents,
+  SerializedObjectProps,
+  type FabricObject,
+} from 'fabric'
+import DrawBoard from '../../index'
 export type ShapeData = Partial<{
   id: string
   DrawType: string
@@ -21,7 +22,7 @@ export interface ShapeCreatorOptions {
   onShapeAdded?: (shape: FabricObject) => void
   onShapeModified?: (shape: FabricObject) => void
   onShapeRemoved?: (shape: FabricObject) => void
-  drawBoard?: DrawBoardEventEmitter // 添加 DrawBoard 实例
+  drawBoard: DrawBoard
 }
 
 /**
@@ -37,7 +38,7 @@ export abstract class BaseShapeCreator {
   protected onShapeAdded?: (shape: FabricObject) => void
   protected onShapeModified?: (shape: FabricObject) => void
   protected onShapeRemoved?: (shape: FabricObject) => void
-  protected drawBoard?: DrawBoardEventEmitter
+  protected drawBoard?: DrawBoard
 
   constructor(canvas: Canvas, options: ShapeCreatorOptions) {
     this.canvas = canvas
@@ -97,7 +98,7 @@ export abstract class BaseShapeCreator {
     }
 
     this.canvas.add(shape)
-
+    this.onRotate(shape)
     // 添加 modified 事件监听
     shape.on('modified', () => {
       this.onShapeModified?.(shape)
@@ -106,7 +107,28 @@ export abstract class BaseShapeCreator {
     // 触发形状添加事件
     this.onShapeAdded?.(shape)
   }
-
+  onRotate(shape: FabricObject) {
+    const canvasWidth = this.canvas.getWidth()
+    const canvasHeight = this.canvas.getHeight()
+    const centerX = canvasWidth / 2
+    const centerY = canvasHeight / 2
+    const data = (shape.get('data') as Record<string, any>) || {}
+    if (!data.rotateBase) {
+      const cp = shape.getCenterPoint()
+      data.rotateBase = { dx: cp.x - centerX, dy: cp.y - centerY }
+      shape.set('data', { ...data })
+    }
+    this.drawBoard?.on('rotate', (angle) => {
+      const normalized = ((angle % 360) + 360) % 360
+      const radians = (normalized * Math.PI) / 180
+      const { dx, dy } = (shape.get('data') as Record<string, any>).rotateBase || { dx: 0, dy: 0 }
+      const x = centerX + dx * Math.cos(radians) - dy * Math.sin(radians)
+      const y = centerY + dx * Math.sin(radians) + dy * Math.cos(radians)
+      shape.set({ originX: 'center', originY: 'center', left: x, top: y, angle: normalized })
+      shape.setCoords()
+      this.canvas.requestRenderAll()
+    })
+  }
   /**
    * 从画布移除图形并触发事件
    * @param shape 要移除的图形对象
@@ -191,6 +213,22 @@ export abstract class BaseShapeCreator {
 
     // 添加通用的形状变形事件处理
     this.addShapeTransformEventListeners(shape)
+  }
+
+
+
+  /**
+   * 将输入点从底图像素坐标系映射到场景坐标系。
+   * 若存在 DrawBoard，则调用 `imageToScene` 完成坐标转换；否则原样返回。
+   *
+   * @param point 输入点（底图像素坐标系）
+   * @returns 场景坐标点（用于在 Fabric 画布中渲染）
+   */
+  protected mapInputPoint(point: { x: number; y: number }): { x: number; y: number } {
+    if (this.drawBoard) {
+      return this.drawBoard.imageToScene(point)
+    }
+    return point
   }
 
   /**

@@ -15,7 +15,7 @@ export class BasePlugin<
   Options,
   T,
 > extends EventEmitter<EventTypes> {
-  protected host?: T
+  protected host!: T
   protected subscriptions: (() => void)[] = []
   protected options: Options
 
