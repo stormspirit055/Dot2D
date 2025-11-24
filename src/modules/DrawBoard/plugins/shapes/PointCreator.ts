@@ -45,9 +45,7 @@ export class PointCreator extends BaseShapeCreator {
 
     for (const pointPosition of options.points) {
       // 应用坐标量化到位置
-      // const scenePoint = this.mapInputPoint(pointPosition)
-      const scenePoint = pointPosition
-      const quantizedPosition = this.quantizePoint(scenePoint)
+      const quantizedPosition = this.quantizePoint(pointPosition)
       const radius = 5 // 固定半径
 
       const point = new Circle({

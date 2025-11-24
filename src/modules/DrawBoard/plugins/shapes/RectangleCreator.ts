@@ -42,9 +42,7 @@ export class RectangleCreator extends BaseShapeCreator {
     }
 
     // 应用坐标量化到所有点
-    const quantizedPoints = options.points
-      .map((point) => this.mapInputPoint(point))
-      .map((point) => this.quantizePoint(point))
+    const quantizedPoints = options.points.map((point) => this.quantizePoint(point))
 
     // 计算矩形的边界框
     const bounds = this.calculateBounds(quantizedPoints)

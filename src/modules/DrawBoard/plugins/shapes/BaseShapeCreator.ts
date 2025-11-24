@@ -1,11 +1,4 @@
-import {
-  Canvas,
-  Circle,
-  FabricObjectProps,
-  ObjectEvents,
-  SerializedObjectProps,
-  type FabricObject,
-} from 'fabric'
+import { Canvas, Circle, type FabricObject } from 'fabric'
 import DrawBoard from '../../index'
 export type ShapeData = Partial<{
   id: string
@@ -213,22 +206,6 @@ export abstract class BaseShapeCreator {
 
     // 添加通用的形状变形事件处理
     this.addShapeTransformEventListeners(shape)
-  }
-
-
-
-  /**
-   * 将输入点从底图像素坐标系映射到场景坐标系。
-   * 若存在 DrawBoard，则调用 `imageToScene` 完成坐标转换；否则原样返回。
-   *
-   * @param point 输入点（底图像素坐标系）
-   * @returns 场景坐标点（用于在 Fabric 画布中渲染）
-   */
-  protected mapInputPoint(point: { x: number; y: number }): { x: number; y: number } {
-    if (this.drawBoard) {
-      return this.drawBoard.imageToScene(point)
-    }
-    return point
   }
 
   /**

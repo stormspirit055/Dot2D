@@ -38,14 +38,6 @@ export default class ImagePlugin extends BasePlugin<
       console.warn('ImagePlugin: Canvas not available')
       return
     }
-    this.host?.on('rotate', (angle) => {
-      if (this.currentImage && this.canvas) {
-        const normalized = ((angle % 360) + 360) % 360
-        this.currentImage.set({ angle: normalized })
-        this.setImgCenter(this.currentImage, angle)
-        this.currentImage.setCoords()
-      }
-    })
   }
 
   /**
@@ -64,7 +56,6 @@ export default class ImagePlugin extends BasePlugin<
     return new Promise<void>((resolve, reject) => {
       FabricImage.fromURL(url)
         .then((img) => {
-          this.setImgCenter(img)
           // 禁用控制器和选择功能
           img.hasControls = false
           img.selectable = false
@@ -78,10 +69,6 @@ export default class ImagePlugin extends BasePlugin<
           this.currentImage = img
           canvas.add(img)
           canvas.sendObjectToBack(img)
-          const tl = img.getCoords()[0]
-          console.log(tl)
-          this.host?.setCoordinateOrigin(tl.x, tl.y)
-
           // 触发图片加载成功事件
           this.emit('imageLoaded', img)
           resolve()
@@ -92,26 +79,6 @@ export default class ImagePlugin extends BasePlugin<
           reject(error)
         })
     })
-  }
-  setImgCenter(img: FabricImage, angle: number = 0) {
-    const canvasWidth = this.canvas?.getWidth() || 0
-    const canvasHeight = this.canvas?.getHeight() || 0
-    const scaleX = angle === 0 || angle === 180 ? canvasWidth / img.width : canvasWidth / img.height
-    const scaleY =
-      angle === 0 || angle === 180 ? canvasHeight / img.height : canvasHeight / img.width
-    const scale = Math.min(scaleX, scaleY)
-
-    // 应用缩放
-    img.scale(scale)
-    const centerX = canvasWidth / 2
-    const centerY = canvasHeight / 2
-    img.set({
-      originX: 'center',
-      originY: 'center',
-      left: centerX,
-      top: centerY,
-    })
-    img.setCoords()
   }
   /**
    * 获取当前加载的图片
