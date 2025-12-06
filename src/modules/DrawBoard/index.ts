@@ -6,12 +6,15 @@ import {
   type TPointerEvent,
   type TPointerEventInfo,
   type CanvasEvents,
+  FabricImage,
+  TMat2D,
 } from 'fabric'
 import WheelZoomPlugin from './plugins/WheelZoomPlugin'
 import CanvasDragPlugin from './plugins/CanvasDragPlugin'
 import ShapePlugin from './plugins/ShapePlugin'
 import ImagePlugin from './plugins/ImagePlugin'
 import CanvasRotatePlugin from './plugins/CanvasRotatePlugin'
+import MousePositionPlugin from './plugins/MousePositionPlugin'
 export type DrawBoradEvents = {
   rotate: [angle: number]
   load: []
@@ -54,9 +57,13 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     }
     await this.imagePlugin.loadImage(url)
   }
-  zoom(scale: number): void {
+  zoom(scale: number, point?: Point): void {
     if (!this.canvas) return
-    this.canvas.setZoom(scale)
+    if (point) {
+      this.canvas.zoomToPoint(point, scale)
+    } else {
+      this.canvas.zoomToPoint(new Point(0, 0), scale)
+    }
     this.emit('zoom', scale)
     this.canvas.requestRenderAll()
   }
@@ -64,6 +71,7 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
     if (!this.canvas) return
     this.angle = this.angle === 270 ? 0 : angle + this.angle
     this.emit('rotate', this.angle)
+    this.initCoordinateSystem(this.imagePlugin!.getImage()!)
     this.canvas.requestRenderAll()
   }
   get zoomLevel() {
@@ -103,14 +111,73 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
   private initDefaultPlugins() {
     this.registerPlugin(WheelZoomPlugin.create())
     this.registerPlugin(CanvasDragPlugin.create())
+    this.registerPlugin(MousePositionPlugin.create())
     this.shapePlugin = this.registerPlugin(ShapePlugin.create())
     this.imagePlugin = this.registerPlugin(ImagePlugin.create())
+    this.imagePlugin.on('imageLoaded', (img) => {
+      this.initCoordinateSystem(img)
+    })
     this.registerPlugin(
       CanvasRotatePlugin.create({
         shortCut: 'r',
         step: 90,
       }),
     )
+  }
+
+  private initCoordinateSystem(img: FabricImage) {
+    const width = img.width
+    const height = img.height
+    const canvasWidth = this.canvas.width!
+    const canvasHeight = this.canvas.height!
+    const scaleX = canvasWidth / (this.angle === 90 || this.angle === 270 ? height : width)
+    const scaleY = canvasHeight / (this.angle === 90 || this.angle === 270 ? width : height)
+    const scale = Math.min(scaleX, scaleY)
+    // const deltaX =
+    //   this.angle === 0
+    //     ? (canvasWidth - width * scale) / 2
+    //     : this.angle === 90
+    //       ? (canvasHeight - width * scale) / 2
+    //       : this.angle === 180
+    //         ? -width * scale - (canvasWidth - width * scale) / 2
+    //         : this.angle === 270
+    //           ? -width * scale - (canvasHeight - width * scale) / 2
+    //           : 0
+    // const deltaY =
+    //   this.angle === 0
+    //     ? (canvasHeight - height * scale) / 2
+    //     : this.angle === 90
+    //       ? -(height * scale + (canvasWidth - height * scale) / 2)
+    //       : this.angle === 180
+    //         ? -(height * scale + (canvasHeight - scale * height) / 2)
+    //         : this.angle === 270
+    //           ? (canvasWidth - scale * height) / 2
+    //           : 0
+    const deltaX =
+      this.angle === 0
+        ? (canvasWidth - width * scale) / 2
+        : this.angle === 90
+          ? scale * height + (canvasWidth - height * scale) / 2
+          : this.angle === 180
+            ? width * scale + (canvasWidth - width * scale) / 2
+            : this.angle === 270
+              ? (canvasWidth - height * scale) / 2
+              : 0
+    const deltaY =
+      this.angle === 0
+        ? (canvasHeight - height * scale) / 2
+        : this.angle === 90
+          ? (canvasHeight - width * scale) / 2
+          : this.angle === 180
+            ? height * scale + (canvasHeight - scale * height) / 2
+            : this.angle === 270
+              ? width * scale + (canvasHeight - width * scale) / 2
+              : 0
+    const cos = Math.cos(this.angle * (Math.PI / 180))
+    const sin = Math.sin(this.angle * (Math.PI / 180))
+    const transform = [scale * cos, scale * sin, -scale * sin, scale * cos, deltaX, deltaY]
+    // const transform = [1, 0, 0, 1, 200, 200]
+    this.canvas.setViewportTransform(transform)
   }
   private initEvents() {
     const eventMap = {
@@ -127,7 +194,9 @@ export default class DrawBorad extends EventEmitter<DrawBoradEvents> {
       })
     })
   }
-
+  transformCanvas(transform: number[]) {
+    this.canvas.setViewportTransform(transform)
+  }
   getCanvas(): Canvas {
     return this.canvas
   }

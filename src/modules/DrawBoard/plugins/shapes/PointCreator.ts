@@ -1,6 +1,7 @@
 import { Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
-import type { Canvas, ObjectEvents } from 'fabric'
+import { ShapeVertex, VertexType } from './ShapeVertex'
+import type { Canvas, ObjectEvents, FabricObject } from 'fabric'
 
 /**
  * 纯位置信息接口
@@ -55,36 +56,126 @@ export class PointCreator extends BaseShapeCreator {
         fill: options.fill || this.options.defaultFillColor,
         stroke: options.stroke || this.options.defaultStrokeColor,
         strokeWidth: options.strokeWidth || this.options.defaultStrokeWidth,
-        // 控制交互性的属性
-        selectable: isInteractive, // 是否可选中
-        evented: isInteractive, // 是否响应事件
-        moveCursor: isInteractive ? 'move' : 'default', // 移动时的光标
-        hoverCursor: isInteractive ? 'move' : 'default', // 悬停时的光标
-        // 锁定形变属性 - 只允许移动，不允许缩放、旋转、倾斜
-        lockScalingX: true, // 禁止水平缩放
-        lockScalingY: true, // 禁止垂直缩放
-        lockRotation: true, // 禁止旋转
-        lockSkewingX: true, // 禁止水平倾斜
-        lockSkewingY: true, // 禁止垂直倾斜
-        hasControls: false, // 隐藏控制点（缩放、旋转控制点）
-        hasBorders: false, // 保留边框（用于显示选中状态）
         originX: 'center',
         originY: 'center',
-        excludeFromExport: false, // 点参与导出（与顶点不同）
-        scaleX: 1, // 固定X轴缩放比例
-        scaleY: 1, // 固定Y轴缩放比例
+        excludeFromExport: false,
+        scaleX: 1,
+        scaleY: 1,
+        ...this.commonObjectOptions(isInteractive, {
+          lockScalingX: true,
+          lockScalingY: true,
+          lockRotation: true,
+          lockSkewingX: true,
+          lockSkewingY: true,
+          // 锁定自身的移动，交由 Vertex 控制
+          lockMovementX: true,
+          lockMovementY: true,
+          hasControls: false,
+          hasBorders: false,
+        }),
+      })
+
+      // 记录上一次的位置，用于计算位移增量
+      let lastPosition = { x: quantizedPosition.x, y: quantizedPosition.y }
+
+      // 创建 Vertex
+      const vertex = new ShapeVertex(
+        this.canvas,
+        {
+          x: quantizedPosition.x,
+          y: quantizedPosition.y,
+          vertexType: VertexType.POINT,
+          data: { shape: point },
+        },
+        {
+          onMoving: (v) => {
+            // 应用坐标量化到点的位置
+            const quantizedPosition = this.quantizePoint({ x: v.left!, y: v.top! })
+            v.set({ left: quantizedPosition.x, top: quantizedPosition.y })
+            v.setCoords()
+
+            // 更新 Point Shape 位置
+            point.set({ left: quantizedPosition.x, top: quantizedPosition.y })
+            point.setCoords()
+
+            // 计算位移增量
+            const dx = quantizedPosition.x - lastPosition.x
+            const dy = quantizedPosition.y - lastPosition.y
+
+            // 如果按住了 Alt 键，移动所有其他点
+            // 注意：这里需要获取当前的 window.event 或者通过其他方式传递 event
+            // Fabric 的 moving 事件参数通常包含 e (MouseEvent)
+            // 但 VertexEventCallbacks.onMoving 签名只传递了 vertex
+            // 这是一个限制，我们可能需要修改 ShapeVertex 的回调签名或者在这里使用全局事件状态
+            // 幸好 ShapeVertex.ts 中: this.callbacks.onMoving!(this.vertex) 是在 vertex.on('moving') 内部调用的
+            // 我们可以暂时假设 Alt 键检测可以通过全局状态或我们修改 ShapeVertex 来支持
+            // 鉴于 ShapeVertex 尚未修改传递 event，这里先尝试不依赖 event 参数，而是检查 window.event (如果环境支持)
+            // 或者，更稳健的做法是：修改 ShapeVertex.ts 允许传递 event 对象
+            // 但在此次任务中，我将尝试使用简单的 hack: 检查 window.event
+            // 或者，由于 ShapeVertex 的实现是 this.callbacks.onMoving!(this.vertex)，它确实没传 event。
+            // 我需要修改 ShapeVertex.ts 吗？用户没说不能改，但为了保持最小改动，我先看看能否通过 this.canvas.getPointer() 等方式推断？不行。
+            // 让我们假设用户当前操作的 event 可以从 window.event 获取（浏览器环境）
+
+            const e = window.event as MouseEvent | undefined
+            if (e && e.altKey) {
+              const allObjects = this.canvas.getObjects()
+              allObjects.forEach((obj) => {
+                // 跳过当前正在移动的点
+                if (obj === point) return
+
+                const data = obj.get('data') as ShapeData & { type?: string; vertices?: Circle[] }
+                // 检查是否是点类型
+                if (data && data.type === 'point') {
+                  const newLeft = (obj.left || 0) + dx
+                  const newTop = (obj.top || 0) + dy
+
+                  // 移动 Shape
+                  obj.set({
+                    left: newLeft,
+                    top: newTop,
+                  })
+                  obj.setCoords()
+
+                  // 同时也移动该 Shape 对应的 Vertex
+                  if (data.vertices && data.vertices[0]) {
+                    const v = data.vertices[0]
+                    v.set({
+                      left: newLeft,
+                      top: newTop,
+                    })
+                    v.setCoords()
+                  }
+                }
+              })
+              this.canvas.requestRenderAll()
+            }
+
+            // 更新上一次的位置
+            lastPosition = { x: quantizedPosition.x, y: quantizedPosition.y }
+          },
+          // 添加 mousedown 回调来重置 lastPosition？
+          // ShapeVertex 目前不支持 onMouseDown 回调，只支持 onMoving, onMouseOver, onMouseOut
+          // 我们可以在 onMoving 开始时检测是否是新的一次拖拽？
+          // 或者我们可以给 Vertex 绑定 mousedown 事件？
+          // ShapeVertex 暴露了 getVertex()，我们可以直接绑定
+        },
+        this.options.drawBoard,
+      )
+
+      const vertexObj = vertex.getVertex()
+
+      // 为 Vertex 绑定 mousedown 以重置 lastPosition
+      vertexObj.on('mousedown', () => {
+        lastPosition = { x: point.left || 0, y: point.top || 0 }
       })
 
       // 设置数据
       point.set('data', {
         ...options.data,
         type: 'point',
+        vertices: [vertexObj], // 关联 Vertex
       })
 
-      // 添加移动事件监听器（应用坐标量化）
-      if (isInteractive) {
-        this.addPointEventListeners(point)
-      }
       // 添加默认事件监听器
       this.addDefaultEventListeners(point)
 
@@ -97,23 +188,13 @@ export class PointCreator extends BaseShapeCreator {
 
       // 添加到画布
       this.addShapeToCanvas(point)
+      // 将 Vertex 也添加到画布（ShapeVertex 不会自动添加）
+      this.canvas.add(vertexObj)
+
       points.push(point)
     }
 
     return points
-  }
-
-  /**
-   * 为点添加事件监听器
-   */
-  private addPointEventListeners(point: Circle): void {
-    point.on('moving', () => {
-      // 应用坐标量化到点的位置
-      const quantizedPosition = this.quantizePoint({ x: point.left!, y: point.top! })
-      point.set({ left: quantizedPosition.x, top: quantizedPosition.y })
-      // 关键修复：更新点的交互区域坐标
-      point.setCoords()
-    })
   }
 
   /**

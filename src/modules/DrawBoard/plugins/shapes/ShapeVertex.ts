@@ -28,6 +28,12 @@ export interface VertexData {
   vertexType: VertexType
   /** 顶点在形状中的索引（对于多边形顶点） */
   vertexIndex?: number
+  /** 顶点内部事件清理函数 */
+  disposers?: {
+    moving?: VoidFunction
+    mouseover?: VoidFunction
+    mouseout?: VoidFunction
+  }
   /** 其他自定义数据 */
   [key: string]: unknown
 }
@@ -72,10 +78,10 @@ export class ShapeVertex {
   private zoomListener: ((zoomLevel: number) => void) | null = null
 
   constructor(
-    canvas: Canvas, 
-    config: VertexConfig, 
+    canvas: Canvas,
+    config: VertexConfig,
     callbacks: VertexEventCallbacks = {},
-    drawBoard?: DrawBoardEventEmitter
+    drawBoard?: DrawBoardEventEmitter,
   ) {
     this.canvas = canvas
     this.config = {
@@ -94,6 +100,7 @@ export class ShapeVertex {
     this.vertex = this.createVertex()
     this.setupEventListeners()
     this.setupZoomListener()
+    this.compensateScaling(this.canvas.getZoom())
   }
 
   /**
@@ -138,6 +145,7 @@ export class ShapeVertex {
       fill: this.config.color,
       stroke: this.config.strokeColor,
       strokeWidth: this.config.strokeWidth,
+      strokeUniform: true,
       selectable: this.config.isInteractive,
       evented: this.config.isInteractive,
       moveCursor: this.config.isInteractive ? 'move' : 'default',
@@ -153,6 +161,7 @@ export class ShapeVertex {
       // 优化交互区域
       perPixelTargetFind: false,
       targetFindTolerance: 5,
+      objectCaching: false,
     })
 
     // 设置顶点数据
@@ -175,26 +184,39 @@ export class ShapeVertex {
   private setupEventListeners(): void {
     if (!this.config.isInteractive) return
 
+    // 获取或初始化 disposers
+    const vertexData = (this.vertex.get('data') as VertexData) || {}
+    const disposers = vertexData.disposers || {}
+
     // 移动事件
     if (this.callbacks.onMoving) {
-      this.vertex.on('moving', () => {
+      const movingDisposer = this.vertex.on('moving', () => {
         this.callbacks.onMoving!(this.vertex)
       })
+      disposers.moving = movingDisposer
     }
 
     // 鼠标悬停效果
-    this.vertex.on('mouseover', () => {
+    const mouseOverDisposer = this.vertex.on('mouseover', () => {
       this.applyHoverEffect()
       if (this.callbacks.onMouseOver) {
         this.callbacks.onMouseOver(this.vertex)
       }
     })
+    disposers.mouseover = mouseOverDisposer
 
-    this.vertex.on('mouseout', () => {
+    const mouseOutDisposer = this.vertex.on('mouseout', () => {
       this.removeHoverEffect()
       if (this.callbacks.onMouseOut) {
         this.callbacks.onMouseOut(this.vertex)
       }
+    })
+    disposers.mouseout = mouseOutDisposer
+
+    // 保存 disposers
+    this.vertex.set('data', {
+      ...vertexData,
+      disposers,
     })
   }
 
@@ -266,85 +288,21 @@ export class ShapeVertex {
    */
   public destroy(): void {
     if (this.vertex) {
-      this.vertex.off() // 移除所有事件监听器
+      // 使用保存的 disposers 清理事件
+      const vertexData = this.vertex.get('data') as VertexData
+      if (vertexData && vertexData.disposers) {
+        Object.values(vertexData.disposers).forEach((dispose) => {
+          if (typeof dispose === 'function') dispose()
+        })
+        // 清空引用
+        vertexData.disposers = {}
+      }
     }
-    
+
     // 移除缩放事件监听器
     if (this.drawBoard && this.zoomListener) {
       this.drawBoard.un('zoom', this.zoomListener)
       this.zoomListener = null
     }
-  }
-
-  /**
-   * 静态方法：创建矩形顶点
-   */
-  static createRectangleVertices(
-    canvas: Canvas,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-    isInteractive: boolean,
-    callbacks: VertexEventCallbacks = {},
-    drawBoard?: DrawBoardEventEmitter,
-  ): ShapeVertex[] {
-    const positions = [
-      { x: left, y: top, type: VertexType.RECTANGLE_TOP_LEFT },
-      { x: left + width, y: top, type: VertexType.RECTANGLE_TOP_RIGHT },
-      { x: left + width, y: top + height, type: VertexType.RECTANGLE_BOTTOM_RIGHT },
-      { x: left, y: top + height, type: VertexType.RECTANGLE_BOTTOM_LEFT },
-    ]
-
-    return positions.map(
-      (pos, index) =>
-        new ShapeVertex(
-          canvas,
-          {
-            x: pos.x,
-            y: pos.y,
-            isInteractive,
-            vertexType: pos.type,
-            vertexIndex: index,
-          },
-          callbacks,
-          drawBoard,
-        ),
-    )
-  }
-
-  /**
-   * 静态方法：创建多边形顶点
-   */
-  static createPolygonVertices(
-    canvas: Canvas,
-    points: { x: number; y: number }[],
-    center: { x: number; y: number },
-    isInteractive: boolean,
-    callbacks: VertexEventCallbacks = {},
-    drawBoard?: DrawBoardEventEmitter,
-  ): ShapeVertex[] {
-    return points.map((point, index) => {
-      // points 已经是绝对坐标，直接使用
-      const absoluteX = point.x
-      const absoluteY = point.y
-
-      return new ShapeVertex(
-        canvas,
-        {
-          x: absoluteX,
-          y: absoluteY,
-          isInteractive,
-          vertexType: VertexType.POLYGON_VERTEX,
-          vertexIndex: index,
-          data: {
-            absoluteX,
-            absoluteY,
-          },
-        },
-        callbacks,
-        drawBoard,
-      )
-    })
   }
 }

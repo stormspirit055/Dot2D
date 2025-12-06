@@ -4,6 +4,7 @@
       <h2>绘图板</h2>
       <div class="toolbar-buttons">
         <button @click="rotateCanvas" class="btn btn-primary">旋转画布</button>
+        <button @click="transformCanvas" class="btn btn-primary">平移画布</button>
         <button @click="addRectangle" class="btn btn-primary">添加矩形</button>
         <button @click="addPolygon" class="btn btn-primary">添加多边形</button>
         <button @click="addPoints" class="btn btn-primary">添加多个点</button>
@@ -97,7 +98,9 @@ const shapesInteractive = ref(true) // 矩形可控制状态
 // 坐标粒度控制相关
 const currentCoordinateGrid = ref(1) // 当前坐标粒度，默认为1（整数坐标）
 const customGridValue = ref(1) // 自定义粒度输入值
-
+const transformCanvas = () => {
+  drawBoard?.transformCanvas([1, 0, 0, 1, 200, 200])
+}
 // 设置坐标粒度
 const setCoordinateGrid = (grid: number) => {
   if (!drawBoard?.shapePlugin) {
@@ -180,7 +183,7 @@ const addRectangle = () => {
       { x: baseX, y: baseY + height }, // 左下角
     ]
 
-    drawBoard?.shapePlugin.addRectangle({
+    const rect = drawBoard?.shapePlugin.addRectangle({
       points: points,
       fill: randomColor,
       interactive: true,
@@ -189,6 +192,8 @@ const addRectangle = () => {
         DrawType: 'rectangle',
       },
     })
+    console.log(rect.top, rect.left)
+    console.log(rect)
   }
 }
 
@@ -287,7 +292,8 @@ const loadImage = async () => {
 
   loading.value = true
   try {
-    await drawBoard.load('/example/assets/1.jpg')
+    // await drawBoard.load('/example/assets/1.jpg')
+    await drawBoard.load('/example/assets/2.png')
     console.log('图片加载成功')
   } catch (error) {
     console.error('图片加载失败:', error)

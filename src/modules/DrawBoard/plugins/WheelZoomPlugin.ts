@@ -63,7 +63,6 @@ export default class WheelZoomPlugin extends BasePlugin<
     const delta = event.deltaY < 0 ? -10 : 10
     const pointer = this.canvas?.getViewportPoint(event)
     const result = zoom! * (1 + delta * this.options.scale)
-    console.log(zoom, 1 + delta * this.options.scale)
     if (result > this.options.maxZoom || result < this.options.minZoom) {
       return
     }

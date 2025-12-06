@@ -60,19 +60,7 @@ export class RectangleCreator extends BaseShapeCreator {
       fill: options.fill || this.options.defaultFillColor,
       stroke: options.stroke || this.options.defaultStrokeColor,
       strokeWidth: options.strokeWidth || this.options.defaultStrokeWidth,
-      // 控制交互性的属性
-      selectable: isInteractive, // 是否可选中
-      evented: isInteractive, // 是否响应事件
-      moveCursor: isInteractive ? 'move' : 'default', // 移动时的光标
-      hoverCursor: isInteractive ? 'move' : 'default', // 悬停时的光标
-      // 锁定形变属性 - 只允许移动，不允许缩放、旋转、倾斜
-      lockScalingX: isInteractive, // 禁止水平缩放
-      lockScalingY: isInteractive, // 禁止垂直缩放
-      lockRotation: isInteractive, // 禁止旋转
-      lockSkewingX: isInteractive, // 禁止水平倾斜
-      lockSkewingY: isInteractive, // 禁止垂直倾斜
-      hasControls: !isInteractive, // 隐藏控制点（缩放、旋转控制点）
-      hasBorders: isInteractive, // 保留边框（用于显示选中状态）
+      ...this.commonObjectOptions(isInteractive, { hasBorders: isInteractive }),
     })
 
     // 创建四个顶点圆点（基于传入的角点坐标）
@@ -105,7 +93,7 @@ export class RectangleCreator extends BaseShapeCreator {
 
     // 将矩形和顶点都添加到画布
     this.addShapeToCanvas(rect)
-    vertices.forEach((vertex) => this.addShapeToCanvas(vertex))
+    // vertices.forEach((vertex) => this.addShapeToCanvas(vertex))
 
     return rect
   }
@@ -208,7 +196,6 @@ export class RectangleCreator extends BaseShapeCreator {
     rect.setCoords()
 
     // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   /**
@@ -384,7 +371,6 @@ export class RectangleCreator extends BaseShapeCreator {
     })
 
     // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   /**

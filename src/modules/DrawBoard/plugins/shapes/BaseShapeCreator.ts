@@ -1,10 +1,12 @@
-import { Canvas, Circle, type FabricObject } from 'fabric'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Canvas, Circle, type FabricObject, type TEventCallback } from 'fabric'
 import DrawBoard from '../../index'
 export type ShapeData = Partial<{
   id: string
   DrawType: string
   zIndex: number
   originalZIndex: number
+  vertexDisposers?: Record<string, VoidFunction>
 }>
 
 export interface ShapeCreatorOptions {
@@ -42,6 +44,27 @@ export abstract class BaseShapeCreator {
     this.drawBoard = options.drawBoard
   }
 
+  protected commonObjectOptions(
+    isInteractive: boolean,
+    overrides: Record<string, any> = {},
+  ): Record<string, any> {
+    return {
+      selectable: isInteractive,
+      evented: isInteractive,
+      moveCursor: isInteractive ? 'move' : 'default',
+      hoverCursor: isInteractive ? 'move' : 'default',
+      lockScalingX: isInteractive,
+      lockScalingY: isInteractive,
+      lockRotation: isInteractive,
+      lockSkewingX: isInteractive,
+      lockSkewingY: isInteractive,
+      hasControls: !isInteractive,
+      hasBorders: isInteractive,
+      objectCaching: false,
+      ...overrides,
+    }
+  }
+
   /**
    * 将坐标量化到指定的网格粒度
    * @param coordinate 原始坐标值
@@ -74,7 +97,6 @@ export abstract class BaseShapeCreator {
       console.warn('BaseShapeCreator: Canvas not available')
       return
     }
-
     // 设置形状为可选择，这样才能触发交互事件
     shape.selectable = true
 
@@ -101,25 +123,15 @@ export abstract class BaseShapeCreator {
     this.onShapeAdded?.(shape)
   }
   onRotate(shape: FabricObject) {
-    const canvasWidth = this.canvas.getWidth()
-    const canvasHeight = this.canvas.getHeight()
-    const centerX = canvasWidth / 2
-    const centerY = canvasHeight / 2
-    const data = (shape.get('data') as Record<string, any>) || {}
-    if (!data.rotateBase) {
-      const cp = shape.getCenterPoint()
-      data.rotateBase = { dx: cp.x - centerX, dy: cp.y - centerY }
-      shape.set('data', { ...data })
-    }
     this.drawBoard?.on('rotate', (angle) => {
-      const normalized = ((angle % 360) + 360) % 360
-      const radians = (normalized * Math.PI) / 180
-      const { dx, dy } = (shape.get('data') as Record<string, any>).rotateBase || { dx: 0, dy: 0 }
-      const x = centerX + dx * Math.cos(radians) - dy * Math.sin(radians)
-      const y = centerY + dx * Math.sin(radians) + dy * Math.cos(radians)
-      shape.set({ originX: 'center', originY: 'center', left: x, top: y, angle: normalized })
-      shape.setCoords()
-      this.canvas.requestRenderAll()
+      // const normalized = ((angle % 360) + 360) % 360
+      // const radians = (normalized * Math.PI) / 180
+      // const { dx, dy } = (shape.get('data') as Record<string, any>).rotateBase || { dx: 0, dy: 0 }
+      // const x = centerX + dx * Math.cos(radians) - dy * Math.sin(radians)
+      // const y = centerY + dx * Math.sin(radians) + dy * Math.cos(radians)
+      // shape.set({ originX: 'center', originY: 'center', left: x, top: y, angle: normalized })
+      // shape.setCoords()
+      // this.canvas.requestRenderAll()
     })
   }
   /**
@@ -132,11 +144,14 @@ export abstract class BaseShapeCreator {
       return
     }
 
-    // 移除所有事件监听器
-    shape.off()
-
     // 从画布移除图形
     this.canvas.remove(shape)
+
+    // 调用 dispose 清理对象资源和所有事件监听器
+    // 注意：dispose 是异步的，如果需要等待清理完成，可以 await，
+    // 但通常在移除场景下，同步调用即可，Fabric 会处理后续清理。
+    // 为了类型安全，确保 shape 确实有 dispose 方法（FabricObject 实例都有）
+    shape.dispose()
 
     // 触发形状移除事件
     this.onShapeRemoved?.(shape)
@@ -184,6 +199,7 @@ export abstract class BaseShapeCreator {
 
     // 当鼠标悬停在形状上时，显示顶点
     shape.on('mouseover', () => {
+      console.log('mouseover')
       shape.set('isHovered', true)
       this.showVertices(shape)
     })
@@ -234,17 +250,21 @@ export abstract class BaseShapeCreator {
    * @param shape 对应的形状对象
    */
   protected addVertexHoverListeners(vertex: Circle, shape: FabricObject): void {
-    // 移除之前可能存在的事件监听器，避免重复绑定
-    vertex.off('mouseover')
-    vertex.off('mouseout')
+    // 获取或初始化 disposers 存储
+    const vertexData = (vertex.get('data') as ShapeData) || {}
+    const disposers = vertexData.vertexDisposers || {}
+
+    // 清理旧的监听器
+    if (disposers.mouseover) disposers.mouseover()
+    if (disposers.mouseout) disposers.mouseout()
 
     // 当鼠标移入顶点时
-    vertex.on('mouseover', () => {
+    const mouseOverDisposer = vertex.on('mouseover', () => {
       shape.set('isVertexHovered', true)
     })
 
     // 当鼠标移出顶点时
-    vertex.on('mouseout', () => {
+    const mouseOutDisposer = vertex.on('mouseout', () => {
       shape.set('isVertexHovered', false)
       // 延迟检查，确保鼠标真正离开了整个"组"
       setTimeout(() => {
@@ -256,6 +276,16 @@ export abstract class BaseShapeCreator {
           this.hideVertices(shape)
         }
       }, 50)
+    })
+
+    // 保存新的 disposers
+    vertex.set('data', {
+      ...vertexData,
+      vertexDisposers: {
+        ...disposers,
+        mouseover: mouseOverDisposer,
+        mouseout: mouseOutDisposer,
+      },
     })
   }
 
@@ -269,9 +299,21 @@ export abstract class BaseShapeCreator {
       data.vertices.forEach((vertex) => {
         if (vertex) {
           vertex.set('visible', false)
+
           // 清理顶点的事件监听器
-          vertex.off('mouseover')
-          vertex.off('mouseout')
+          const vertexData = (vertex.get('data') as ShapeData) || {}
+          const disposers = vertexData.vertexDisposers
+
+          if (disposers) {
+            if (disposers.mouseover) disposers.mouseover()
+            if (disposers.mouseout) disposers.mouseout()
+
+            // 清空 disposers
+            vertex.set('data', {
+              ...vertexData,
+              vertexDisposers: {},
+            })
+          }
         }
       })
       // 清理 shape 的 hover 状态

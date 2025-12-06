@@ -1,7 +1,13 @@
 import { Polygon, Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
 import type { Canvas, ObjectEvents } from 'fabric'
-import { ShapeVertex, VertexEventCallbacks, VertexData } from './ShapeVertex'
+import {
+  ShapeVertex,
+  VertexEventCallbacks,
+  VertexData,
+  VertexType,
+  VertexConfig,
+} from './ShapeVertex'
 import { PointPosition } from './PointCreator'
 
 export interface PolygonOptions {
@@ -51,24 +57,10 @@ export class PolygonCreator extends BaseShapeCreator {
       fill: options.fill || this.options.defaultFillColor,
       stroke: options.stroke || this.options.defaultStrokeColor,
       strokeWidth: options.strokeWidth || this.options.defaultStrokeWidth,
-      // 控制交互性的属性
-      selectable: isInteractive, // 是否可选中
-      evented: isInteractive, // 是否响应事件
-      moveCursor: isInteractive ? 'move' : 'default', // 移动时的光标
-      hoverCursor: isInteractive ? 'move' : 'default', // 悬停时的光标
-      // 精确点击检测配置
-      perPixelTargetFind: false, // 启用像素级精确检测，只有点击到实际形状内部才能拖动
-      // 锁定形变属性 - 只允许移动，不允许缩放、旋转、倾斜
-      lockScalingX: isInteractive, // 禁止水平缩放
-      lockScalingY: isInteractive, // 禁止垂直缩放
-      lockRotation: isInteractive, // 禁止旋转
-      lockSkewingX: isInteractive, // 禁止水平倾斜
-      lockSkewingY: isInteractive, // 禁止垂直倾斜
-      hasControls: !isInteractive, // 隐藏控制点（缩放、旋转控制点）
-      hasBorders: false, // 保留边框（用于显示选中状态）
+      perPixelTargetFind: false,
       originX: 'center',
       originY: 'center',
-      objectCaching: false, // 禁用缓存以确保形变时实时更新
+      ...this.commonObjectOptions(isInteractive, { hasBorders: false, objectCaching: false }),
     })
 
     // 创建顶点圆点（使用原始的绝对坐标）
@@ -134,18 +126,25 @@ export class PolygonCreator extends BaseShapeCreator {
       },
     }
 
-    // 使用 ShapeVertex 类创建顶点
-    const shapeVertices = ShapeVertex.createPolygonVertices(
-      this.canvas,
-      points,
-      center,
-      isInteractive,
-      callbacks,
-      this.drawBoard,
-    )
+    const vertices: Circle[] = []
+    points.forEach((point, index) => {
+      const config: VertexConfig = {
+        x: point.x,
+        y: point.y,
+        isInteractive,
+        vertexType: VertexType.POLYGON_VERTEX,
+        vertexIndex: index,
+        data: {
+          absoluteX: point.x,
+          absoluteY: point.y,
+        },
+      }
 
-    // 返回 Circle 对象数组
-    return shapeVertices.map((shapeVertex) => shapeVertex.getVertex())
+      const shapeVertex = new ShapeVertex(this.canvas, config, callbacks, this.drawBoard)
+      vertices.push(shapeVertex.getVertex())
+    })
+
+    return vertices
   }
 
   /**
@@ -190,9 +189,7 @@ export class PolygonCreator extends BaseShapeCreator {
 
     // 关键修复：更新多边形的交互区域坐标
     polygon.setCoords()
-
     // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   /**
@@ -315,9 +312,6 @@ export class PolygonCreator extends BaseShapeCreator {
       // 更新顶点的交互区域坐标
       vertex.setCoords()
     })
-
-    // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   /**
