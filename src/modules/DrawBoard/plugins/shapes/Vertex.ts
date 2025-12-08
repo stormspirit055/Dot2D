@@ -67,7 +67,6 @@ export class Vertex {
   private vertex: Circle
   private config: VertexConfig
   private callbacks: VertexEventCallbacks
-  private originalRadius: number
   private originalColor: string
   private drawBoard: DrawBoardEventEmitter | null
   private scalingDisposer: VoidFunction | null = null
@@ -88,7 +87,6 @@ export class Vertex {
       ...config,
     }
     this.callbacks = callbacks
-    this.originalRadius = this.config.radius!
     this.originalColor = this.config.color!
     this.drawBoard = drawBoard || null
 

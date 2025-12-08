@@ -1,6 +1,7 @@
 import { Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
 import { Vertex, VertexType } from './Vertex'
+import { enableScalingCompensation } from '../../utils/scaling'
 import type { Canvas, ObjectEvents } from 'fabric'
 
 /**
@@ -56,6 +57,7 @@ export class PointCreator extends BaseShapeCreator {
         fill: options.fill || this.options.defaultFillColor,
         stroke: options.stroke || this.options.defaultStrokeColor,
         strokeWidth: options.strokeWidth || this.options.defaultStrokeWidth,
+        strokeUniform: true,
         originX: 'center',
         originY: 'center',
         excludeFromExport: false,
@@ -77,6 +79,26 @@ export class PointCreator extends BaseShapeCreator {
 
       // 记录上一次的位置，用于计算位移增量
       let lastPosition = { x: quantizedPosition.x, y: quantizedPosition.y }
+
+      // 启用缩放补偿（全量补偿，类似 Vertex）
+      if (this.options.drawBoard) {
+        const pointDisposer = enableScalingCompensation(
+          point,
+          this.options.drawBoard,
+          this.canvas,
+          {
+            strokeOnly: false,
+          },
+        )
+        // 存入 data.vertexDisposers
+        const updatedData = point.get('data') as ShapeData
+        console.log(updatedData)
+        point.set('data', {
+          vertexDisposers: {
+            scaling: pointDisposer,
+          },
+        })
+      }
 
       // 创建 Vertex
       const vertex = new Vertex(

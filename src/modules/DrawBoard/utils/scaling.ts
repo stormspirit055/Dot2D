@@ -47,6 +47,7 @@ export function enableScalingCompensation(
       })
     } else {
       // 全量补偿（适用于 Vertex）
+      console.log(compensationScale)
       object.set({
         scaleX: compensationScale,
         scaleY: compensationScale,

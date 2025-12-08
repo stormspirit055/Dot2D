@@ -58,7 +58,7 @@ export class PolygonCreator extends BaseShapeCreator {
     })
 
     // 创建顶点圆点（使用原始的绝对坐标）
-    const vertices = this.createVertices(points, center, isInteractive)
+    const vertices = this.createVertices(points, isInteractive)
 
     // 为多边形添加顶点引用
     polygon.set('data', {
@@ -101,11 +101,7 @@ export class PolygonCreator extends BaseShapeCreator {
   /**
    * 创建多边形的顶点
    */
-  private createVertices(
-    points: { x: number; y: number }[],
-    center: { x: number; y: number },
-    isInteractive: boolean,
-  ): Circle[] {
+  private createVertices(points: { x: number; y: number }[], isInteractive: boolean): Circle[] {
     if (!isInteractive) {
       return []
     }
