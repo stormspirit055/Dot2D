@@ -1,7 +1,7 @@
 import { Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
-import { ShapeVertex, VertexType } from './ShapeVertex'
-import type { Canvas, ObjectEvents, FabricObject } from 'fabric'
+import { Vertex, VertexType } from './Vertex'
+import type { Canvas, ObjectEvents } from 'fabric'
 
 /**
  * 纯位置信息接口
@@ -79,7 +79,7 @@ export class PointCreator extends BaseShapeCreator {
       let lastPosition = { x: quantizedPosition.x, y: quantizedPosition.y }
 
       // 创建 Vertex
-      const vertex = new ShapeVertex(
+      const vertex = new Vertex(
         this.canvas,
         {
           x: quantizedPosition.x,
@@ -101,21 +101,6 @@ export class PointCreator extends BaseShapeCreator {
             // 计算位移增量
             const dx = quantizedPosition.x - lastPosition.x
             const dy = quantizedPosition.y - lastPosition.y
-
-            // 如果按住了 Alt 键，移动所有其他点
-            // 注意：这里需要获取当前的 window.event 或者通过其他方式传递 event
-            // Fabric 的 moving 事件参数通常包含 e (MouseEvent)
-            // 但 VertexEventCallbacks.onMoving 签名只传递了 vertex
-            // 这是一个限制，我们可能需要修改 ShapeVertex 的回调签名或者在这里使用全局事件状态
-            // 幸好 ShapeVertex.ts 中: this.callbacks.onMoving!(this.vertex) 是在 vertex.on('moving') 内部调用的
-            // 我们可以暂时假设 Alt 键检测可以通过全局状态或我们修改 ShapeVertex 来支持
-            // 鉴于 ShapeVertex 尚未修改传递 event，这里先尝试不依赖 event 参数，而是检查 window.event (如果环境支持)
-            // 或者，更稳健的做法是：修改 ShapeVertex.ts 允许传递 event 对象
-            // 但在此次任务中，我将尝试使用简单的 hack: 检查 window.event
-            // 或者，由于 ShapeVertex 的实现是 this.callbacks.onMoving!(this.vertex)，它确实没传 event。
-            // 我需要修改 ShapeVertex.ts 吗？用户没说不能改，但为了保持最小改动，我先看看能否通过 this.canvas.getPointer() 等方式推断？不行。
-            // 让我们假设用户当前操作的 event 可以从 window.event 获取（浏览器环境）
-
             const e = window.event as MouseEvent | undefined
             if (e && e.altKey) {
               const allObjects = this.canvas.getObjects()
@@ -149,15 +134,9 @@ export class PointCreator extends BaseShapeCreator {
               })
               this.canvas.requestRenderAll()
             }
-
             // 更新上一次的位置
             lastPosition = { x: quantizedPosition.x, y: quantizedPosition.y }
           },
-          // 添加 mousedown 回调来重置 lastPosition？
-          // ShapeVertex 目前不支持 onMouseDown 回调，只支持 onMoving, onMouseOver, onMouseOut
-          // 我们可以在 onMoving 开始时检测是否是新的一次拖拽？
-          // 或者我们可以给 Vertex 绑定 mousedown 事件？
-          // ShapeVertex 暴露了 getVertex()，我们可以直接绑定
         },
         this.options.drawBoard,
       )
@@ -188,7 +167,7 @@ export class PointCreator extends BaseShapeCreator {
 
       // 添加到画布
       this.addShapeToCanvas(point)
-      // 将 Vertex 也添加到画布（ShapeVertex 不会自动添加）
+      // 将 Vertex 也添加到画布（Vertex 不会自动添加）
       this.canvas.add(vertexObj)
 
       points.push(point)

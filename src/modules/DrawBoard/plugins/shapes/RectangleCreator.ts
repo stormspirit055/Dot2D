@@ -1,13 +1,7 @@
 import { Rect, Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
 import type { Canvas } from 'fabric'
-import {
-  ShapeVertex,
-  VertexEventCallbacks,
-  VertexData,
-  VertexType,
-  VertexConfig,
-} from './ShapeVertex'
+import { Vertex, VertexEventCallbacks, VertexData, VertexType, VertexConfig } from './Vertex'
 import { PointPosition } from './PointCreator'
 
 export interface RectangleOptions {
@@ -441,7 +435,7 @@ export class RectangleCreator extends BaseShapeCreator {
         vertexType: vertexTypes[index % 4],
       }
 
-      const shapeVertex = new ShapeVertex(this.canvas, config, callbacks, this.drawBoard)
+      const shapeVertex = new Vertex(this.canvas, config, callbacks, this.drawBoard)
       const vertex = shapeVertex.getVertex()
 
       vertices.push(vertex)

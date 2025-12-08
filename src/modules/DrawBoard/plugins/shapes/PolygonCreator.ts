@@ -1,13 +1,7 @@
 import { Polygon, Circle } from 'fabric'
 import { BaseShapeCreator, type ShapeData, type ShapeCreatorOptions } from './BaseShapeCreator'
 import type { Canvas, ObjectEvents } from 'fabric'
-import {
-  ShapeVertex,
-  VertexEventCallbacks,
-  VertexData,
-  VertexType,
-  VertexConfig,
-} from './ShapeVertex'
+import { Vertex, VertexEventCallbacks, VertexData, VertexType, VertexConfig } from './Vertex'
 import { PointPosition } from './PointCreator'
 
 export interface PolygonOptions {
@@ -140,7 +134,7 @@ export class PolygonCreator extends BaseShapeCreator {
         },
       }
 
-      const shapeVertex = new ShapeVertex(this.canvas, config, callbacks, this.drawBoard)
+      const shapeVertex = new Vertex(this.canvas, config, callbacks, this.drawBoard)
       vertices.push(shapeVertex.getVertex())
     })
 

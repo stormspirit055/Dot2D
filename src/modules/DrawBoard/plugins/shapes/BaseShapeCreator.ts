@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Canvas, Circle, type FabricObject, type TEventCallback } from 'fabric'
+import { Canvas, Circle, type FabricObject } from 'fabric'
 import DrawBoard from '../../index'
+import { enableScalingCompensation } from '../../utils/scaling'
 export type ShapeData = Partial<{
   id: string
   DrawType: string
@@ -110,10 +111,31 @@ export abstract class BaseShapeCreator {
         zIndex: BaseShapeCreator.currentZIndex,
       }
       shape.set('data', newData)
+
+      // 启用缩放补偿（针对 strokeWidth）
+      if (this.drawBoard) {
+        // 使用新模式：strokeOnly
+        // 由于没有方便的地方存储 disposer，且对象销毁时 Fabric 会自动清理引用（但监听器需要手动清理）
+        // 我们可以将 disposer 存入 data 字段，类似 vertexDisposers
+        const strokeDisposer = enableScalingCompensation(shape, this.drawBoard, this.canvas, {
+          strokeOnly: true,
+        })
+
+        // 存入 data.vertexDisposers (借用这个字段，或者新建一个字段)
+        // 既然已经有 vertexDisposers 结构，我们可以扩展它或者新建 shapeDisposers
+        // 简单起见，我们扩展 ShapeData 类型增加 scalingDisposer
+        const updatedData = shape.get('data') as ShapeData
+        shape.set('data', {
+          ...updatedData,
+          vertexDisposers: {
+            ...(updatedData.vertexDisposers || {}),
+            scaling: strokeDisposer,
+          },
+        })
+      }
     }
 
     this.canvas.add(shape)
-    this.onRotate(shape)
     // 添加 modified 事件监听
     shape.on('modified', () => {
       this.onShapeModified?.(shape)
@@ -121,18 +143,6 @@ export abstract class BaseShapeCreator {
 
     // 触发形状添加事件
     this.onShapeAdded?.(shape)
-  }
-  onRotate(shape: FabricObject) {
-    this.drawBoard?.on('rotate', (angle) => {
-      // const normalized = ((angle % 360) + 360) % 360
-      // const radians = (normalized * Math.PI) / 180
-      // const { dx, dy } = (shape.get('data') as Record<string, any>).rotateBase || { dx: 0, dy: 0 }
-      // const x = centerX + dx * Math.cos(radians) - dy * Math.sin(radians)
-      // const y = centerY + dx * Math.sin(radians) + dy * Math.cos(radians)
-      // shape.set({ originX: 'center', originY: 'center', left: x, top: y, angle: normalized })
-      // shape.setCoords()
-      // this.canvas.requestRenderAll()
-    })
   }
   /**
    * 从画布移除图形并触发事件
@@ -146,6 +156,13 @@ export abstract class BaseShapeCreator {
 
     // 从画布移除图形
     this.canvas.remove(shape)
+
+    // 清理 scaling 监听器
+    const data = shape.get('data') as ShapeData
+    if (data && data.vertexDisposers && data.vertexDisposers.scaling) {
+      data.vertexDisposers.scaling()
+      delete data.vertexDisposers.scaling
+    }
 
     // 调用 dispose 清理对象资源和所有事件监听器
     // 注意：dispose 是异步的，如果需要等待清理完成，可以 await，
@@ -319,91 +336,6 @@ export abstract class BaseShapeCreator {
       // 清理 shape 的 hover 状态
       shape.set('isVertexHovered', false)
       this.canvas.renderAll()
-    }
-  }
-
-  /**
-   * 将形状置顶并保存原始 zIndex
-   * @param shape 形状对象
-   */
-  protected bringShapeToFront(shape: FabricObject): void {
-    const data = shape.get('data') as ShapeData
-    if (data && typeof data.zIndex === 'number') {
-      // 保存原始 zIndex
-      const newData: ShapeData = {
-        ...data,
-        originalZIndex: data.zIndex,
-      }
-      shape.set('data', newData)
-
-      // 将形状置顶
-      this.canvas.bringObjectToFront(shape)
-
-      // 同时将相关顶点也置顶
-      this.bringVerticestoFront(shape)
-    }
-  }
-
-  /**
-   * 恢复形状到原始 zIndex 位置
-   * @param shape 形状对象
-   */
-  protected restoreShapeZIndex(shape: FabricObject): void {
-    const data = shape.get('data') as ShapeData
-    if (data && typeof data.originalZIndex === 'number') {
-      // 获取画布上所有对象
-      const objects = this.canvas.getObjects()
-
-      // 收集所有主要形状（非顶点）及其 zIndex
-      const shapes: Array<{ shape: FabricObject; zIndex: number }> = []
-
-      objects.forEach((obj) => {
-        const isVertex = obj.get('isVertex') === true
-        if (!isVertex) {
-          const objData = obj.get('data') as ShapeData
-          if (objData && typeof objData.zIndex === 'number') {
-            const zIndex = obj === shape ? data.originalZIndex : objData.zIndex
-            if (typeof zIndex === 'number') {
-              shapes.push({
-                shape: obj,
-                zIndex: zIndex,
-              })
-            }
-          }
-        }
-      })
-
-      // 按 zIndex 排序
-      shapes.sort((a, b) => a.zIndex - b.zIndex)
-
-      // 重新排列所有形状
-      shapes.forEach(({ shape: shapeObj }) => {
-        this.canvas.bringObjectToFront(shapeObj)
-      })
-
-      // 清除 originalZIndex
-      const newData: ShapeData = {
-        ...data,
-        originalZIndex: undefined,
-      }
-      shape.set('data', newData)
-
-      this.canvas.renderAll()
-    }
-  }
-
-  /**
-   * 将形状的顶点置顶
-   * @param shape 形状对象
-   */
-  protected bringVerticestoFront(shape: FabricObject): void {
-    const data = shape.get('data') as { vertices?: Circle[] }
-    if (data && data.vertices) {
-      data.vertices.forEach((vertex) => {
-        if (vertex) {
-          this.canvas.bringObjectToFront(vertex)
-        }
-      })
     }
   }
 

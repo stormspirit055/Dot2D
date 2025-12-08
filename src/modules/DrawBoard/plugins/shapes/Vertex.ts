@@ -1,10 +1,5 @@
 import { Circle, Canvas, FabricObject } from 'fabric'
-
-// 添加 DrawBoard 类型导入
-type DrawBoardEventEmitter = {
-  on(event: 'zoom', listener: (zoomLevel: number) => void): void
-  un(event: 'zoom', listener: (zoomLevel: number) => void): void
-}
+import { enableScalingCompensation, DrawBoardEventEmitter } from '../../utils/scaling'
 
 /**
  * 顶点类型枚举
@@ -67,7 +62,7 @@ export interface VertexEventCallbacks {
  * 图形顶点类
  * 抽象了顶点的创建、样式设置、事件监听等功能
  */
-export class ShapeVertex {
+export class Vertex {
   private canvas: Canvas
   private vertex: Circle
   private config: VertexConfig
@@ -75,7 +70,7 @@ export class ShapeVertex {
   private originalRadius: number
   private originalColor: string
   private drawBoard: DrawBoardEventEmitter | null
-  private zoomListener: ((zoomLevel: number) => void) | null = null
+  private scalingDisposer: VoidFunction | null = null
 
   constructor(
     canvas: Canvas,
@@ -99,39 +94,12 @@ export class ShapeVertex {
 
     this.vertex = this.createVertex()
     this.setupEventListeners()
-    this.setupZoomListener()
-    this.compensateScaling(this.canvas.getZoom())
-  }
 
-  /**
-   * 设置缩放事件监听器
-   */
-  private setupZoomListener(): void {
-    if (!this.drawBoard) return
-
-    this.zoomListener = (zoomLevel: number) => {
-      this.compensateScaling(zoomLevel)
+    // 启用缩放补偿
+    if (this.drawBoard) {
+      console.log('启用缩放补偿')
+      this.scalingDisposer = enableScalingCompensation(this.vertex, this.drawBoard, this.canvas)
     }
-
-    this.drawBoard.on('zoom', this.zoomListener)
-  }
-
-  /**
-   * 对顶点进行缩放补偿，使其在画布缩放时保持固定的视觉大小
-   * @param zoomLevel 当前画布的缩放级别
-   */
-  private compensateScaling(zoomLevel: number): void {
-    // 计算反向缩放比例
-    const compensationScale = 1 / zoomLevel
-
-    // 设置反向缩放比例，抵消画布缩放的影响
-    this.vertex.set({
-      scaleX: compensationScale,
-      scaleY: compensationScale,
-    })
-
-    // 重新渲染画布
-    this.canvas.renderAll()
   }
 
   /**
@@ -227,8 +195,6 @@ export class ShapeVertex {
     this.vertex.set({
       fill: 'orange',
       stroke: 'darkorange',
-      strokeWidth: this.config.strokeWidth! + 1,
-      radius: this.originalRadius + 1,
     })
     this.canvas.renderAll()
   }
@@ -240,8 +206,6 @@ export class ShapeVertex {
     this.vertex.set({
       fill: this.originalColor,
       stroke: this.config.strokeColor,
-      strokeWidth: this.config.strokeWidth,
-      radius: this.originalRadius,
     })
     this.canvas.renderAll()
   }
@@ -251,36 +215,6 @@ export class ShapeVertex {
    */
   public getVertex(): Circle {
     return this.vertex
-  }
-
-  /**
-   * 获取顶点位置
-   */
-  public getPosition(): { x: number; y: number } {
-    return { x: this.vertex.left!, y: this.vertex.top! }
-  }
-
-  /**
-   * 显示顶点
-   */
-  public show(): void {
-    this.vertex.set('visible', true)
-    this.canvas.renderAll()
-  }
-
-  /**
-   * 隐藏顶点
-   */
-  public hide(): void {
-    this.vertex.set('visible', false)
-    this.canvas.renderAll()
-  }
-
-  /**
-   * 检查顶点是否可见
-   */
-  public isVisible(): boolean {
-    return this.vertex.visible !== false
   }
 
   /**
@@ -299,10 +233,10 @@ export class ShapeVertex {
       }
     }
 
-    // 移除缩放事件监听器
-    if (this.drawBoard && this.zoomListener) {
-      this.drawBoard.un('zoom', this.zoomListener)
-      this.zoomListener = null
+    // 清理缩放补偿监听器
+    if (this.scalingDisposer) {
+      this.scalingDisposer()
+      this.scalingDisposer = null
     }
   }
 }
